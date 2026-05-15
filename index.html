@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Snake Roguelike — Combo Feel Test</title>
+<style>
+  :root {
+    --bg: #0d0e15;
+    --panel: #1a1d2a;
+    --text: #d4d7e3;
+    --dim: #6a6f85;
+    --accent: #ffd84b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+  .wrap {
+    display: flex;
+    height: 100vh;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 16px;
+  }
+  #game {
+    background: #0a0b11;
+    border: 1px solid #1f2333;
+    border-radius: 6px;
+    image-rendering: pixelated;
+  }
+  .panel {
+    width: 280px;
+    background: var(--panel);
+    border-radius: 6px;
+    padding: 18px;
+    font-size: 13px;
+    line-height: 1.5;
+    align-self: stretch;
+    margin: 16px 0;
+    overflow-y: auto;
+  }
+  .panel h1 {
+    font-size: 14px;
+    color: var(--accent);
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+    font-weight: 700;
+  }
+  .subtitle {
+    font-size: 11px;
+    color: var(--dim);
+    margin-bottom: 14px;
+    letter-spacing: 0.5px;
+  }
+  .panel h3 {
+    font-size: 11px;
+    color: var(--dim);
+    margin: 14px 0 6px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+  }
+  .key {
+    display: inline-block;
+    background: #2a2e42;
+    color: var(--text);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    margin: 0 1px;
+    font-family: inherit;
+    border: 1px solid #3a3f55;
+  }
+  .seg-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 12px;
+  }
+  .seg-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px currentColor;
+  }
+  .chain {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    padding: 8px;
+    background: #11131c;
+    border-radius: 4px;
+    min-height: 36px;
+    align-items: center;
+  }
+  .chain-seg {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: bold;
+    color: #000;
+  }
+  .arrow {
+    color: var(--dim);
+    font-size: 10px;
+  }
+  .stat {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+    font-size: 12px;
+    color: var(--dim);
+  }
+  .stat span:last-child {
+    color: var(--text);
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+  }
+  .ctrl-row {
+    margin-top: 4px;
+    font-size: 11px;
+  }
+  .hint {
+    margin-top: 12px;
+    padding: 8px;
+    background: #11131c;
+    border-left: 2px solid var(--accent);
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--dim);
+    line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="game" width="800" height="576"></canvas>
+  <div class="panel">
+    <h1>SNAKE ROGUELIKE</h1>
+    <div class="subtitle">combo feel test · v0.1</div>
+
+    <h3>Your chain · head → tail</h3>
+    <div class="chain" id="chain"></div>
+
+    <h3>Stats</h3>
+    <div class="stat"><span>Length</span><span id="stat-len">3</span></div>
+    <div class="stat"><span>Kills</span><span id="stat-kills">0</span></div>
+    <div class="stat"><span>Speed</span><span id="stat-speed">150ms</span></div>
+
+    <h3>Segment types</h3>
+    <div class="seg-row"><div class="seg-dot" style="background:#ff6b35;color:#ff6b35"></div><span><b style="color:#ff6b35">Flame</b> · fires forward</span></div>
+    <div class="seg-row"><div class="seg-dot" style="background:#a64bff;color:#a64bff"></div><span><b style="color:#a64bff">Magnet</b> · pulls pickups</span></div>
+    <div class="seg-row"><div class="seg-dot" style="background:#4bd9ff;color:#4bd9ff"></div><span><b style="color:#4bd9ff">Shield</b> · damaging shockwave</span></div>
+    <div class="seg-row"><div class="seg-dot" style="background:#ffd84b;color:#ffd84b"></div><span><b style="color:#ffd84b">Echo</b> · repeats segment in front</span></div>
+
+    <h3>Controls</h3>
+    <div class="ctrl-row"><span class="key">WASD</span> / <span class="key">↑↓←→</span> steer</div>
+    <div class="ctrl-row"><span class="key">1</span> add Flame &nbsp; <span class="key">2</span> add Magnet</div>
+    <div class="ctrl-row"><span class="key">3</span> add Shield &nbsp; <span class="key">4</span> add Echo</div>
+    <div class="ctrl-row"><span class="key">X</span> drop tail &nbsp; <span class="key">R</span> reset</div>
+    <div class="ctrl-row"><span class="key">[</span> slower &nbsp; <span class="key">]</span> faster</div>
+
+    <div class="hint">
+      Try <b style="color:#ff6b35">F</b><b style="color:#ffd84b">E</b><b style="color:#ffd84b">E</b> — Flame followed by two Echoes triples your fire output. Then add a <b style="color:#a64bff">M</b> magnet in front to drag enemies into the spray.
+    </div>
+  </div>
+</div>
+<script>
+'use strict';
+
+// === CONSTANTS ===
+const COLS = 25, ROWS = 18, TILE = 32;
+
+// Segment definitions (positional triggers)
+const SEG = {
+  BODY:   { color: '#5a607a', label: '·',  cooldown: 0 },
+  FLAME:  { color: '#ff6b35', label: 'F',  cooldown: 18 },
+  MAGNET: { color: '#a64bff', label: 'M',  cooldown: 6 },
+  SHIELD: { color: '#4bd9ff', label: 'S',  cooldown: 14 },
+  ECHO:   { color: '#ffd84b', label: 'E',  cooldown: 0 }, // reactive
+};
+
+// === GAME STATE ===
+let game;
+function reset() {
+  game = {
+    snake: [
+      { x: 12, y: 9, type: 'BODY', cd: 0 },
+      { x: 11, y: 9, type: 'BODY', cd: 0 },
+      { x: 10, y: 9, type: 'BODY', cd: 0 },
+    ],
+    headDir: { x: 1, y: 0 },
+    queuedDir: { x: 1, y: 0 },
+    enemies: [],
+    projectiles: [],
+    pickups: [],
+    particles: [],
+    pulses: [], // shockwaves
+    flashes: [], // segment trigger flashes
+    tick: 0,
+    kills: 0,
+    tickMs: 150,
+    lastStep: 0,
+    pendingSpawns: { enemy: [], pickup: [] },
+  };
+  for (let i = 0; i < 6; i++) spawnEnemy();
+  for (let i = 0; i < 3; i++) spawnPickup();
+}
+
+// === HELPERS ===
+function rand(n) { return Math.floor(Math.random() * n); }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function emptyTile() {
+  for (let tries = 0; tries < 200; tries++) {
+    const x = rand(COLS), y = rand(ROWS);
+    const tooClose = game.snake.some(s => Math.abs(s.x - x) < 2 && Math.abs(s.y - y) < 2);
+    if (tooClose) continue;
+    if (game.enemies.some(e => Math.floor(e.x) === x && Math.floor(e.y) === y)) continue;
+    if (game.pickups.some(p => Math.floor(p.x) === x && Math.floor(p.y) === y)) continue;
+    return { x, y };
+  }
+  return { x: rand(COLS), y: rand(ROWS) };
+}
+
+function spawnEnemy() {
+  const t = emptyTile();
+  game.enemies.push({ x: t.x, y: t.y, hp: 1, hitFlash: 0 });
+}
+function spawnPickup() {
+  const t = emptyTile();
+  const types = ['FLAME', 'MAGNET', 'SHIELD', 'ECHO'];
+  const type = types[rand(types.length)];
+  game.pickups.push({ x: t.x, y: t.y, vx: 0, vy: 0, type, bob: Math.random() * Math.PI * 2 });
+}
+function addSegment(type) {
+  const tail = game.snake[game.snake.length - 1];
+  game.snake.push({ x: tail.x, y: tail.y, type, cd: 0 });
+}
+function dropTail() {
+  if (game.snake.length > 3) {
+    const t = game.snake.pop();
+    for (let i = 0; i < 8; i++) spawnParticle(t.x, t.y, '#888');
+  }
+}
+
+function spawnParticle(x, y, color) {
+  game.particles.push({
+    x, y,
+    vx: (Math.random() - 0.5) * 0.5,
+    vy: (Math.random() - 0.5) * 0.5,
+    life: 18 + rand(15),
+    maxLife: 30,
+    color
+  });
+}
+
+function spawnFlash(seg) {
+  game.flashes.push({ x: seg.x, y: seg.y, life: 8, color: SEG[seg.type].color });
+}
+
+// === INPUT ===
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (k === 'arrowup' || k === 'w') game.queuedDir = { x: 0, y: -1 };
+  else if (k === 'arrowdown' || k === 's') game.queuedDir = { x: 0, y: 1 };
+  else if (k === 'arrowleft' || k === 'a') game.queuedDir = { x: -1, y: 0 };
+  else if (k === 'arrowright' || k === 'd') game.queuedDir = { x: 1, y: 0 };
+  else if (k === '1') addSegment('FLAME');
+  else if (k === '2') addSegment('MAGNET');
+  else if (k === '3') addSegment('SHIELD');
+  else if (k === '4') addSegment('ECHO');
+  else if (k === 'x') dropTail();
+  else if (k === 'r') reset();
+  else if (k === '[') game.tickMs = Math.min(400, game.tickMs + 20);
+  else if (k === ']') game.tickMs = Math.max(60, game.tickMs - 20);
+  else return;
+  if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
+});
+
+// === TICK ===
+function step() {
+  game.tick++;
+
+  // 1. Apply queued direction (prevent 180° self-collide moves)
+  const cur = game.headDir;
+  const q = game.queuedDir;
+  if (!(q.x === -cur.x && q.y === -cur.y)) {
+    game.headDir = q;
+  }
+
+  // 2. Move snake — each segment takes the position of the one in front
+  const oldPositions = game.snake.map(s => ({ x: s.x, y: s.y }));
+  const head = game.snake[0];
+  head.x = (head.x + game.headDir.x + COLS) % COLS;
+  head.y = (head.y + game.headDir.y + ROWS) % ROWS;
+  for (let i = 1; i < game.snake.length; i++) {
+    game.snake[i].x = oldPositions[i - 1].x;
+    game.snake[i].y = oldPositions[i - 1].y;
+  }
+
+  // 3. Pickup collision (any segment can collect)
+  game.pickups = game.pickups.filter(p => {
+    for (const seg of game.snake) {
+      const dx = p.x - seg.x, dy = p.y - seg.y;
+      if (Math.hypot(dx, dy) < 0.7) {
+        addSegment(p.type);
+        for (let i = 0; i < 14; i++) spawnParticle(p.x, p.y, SEG[p.type].color);
+        setTimeout(spawnPickup, 700);
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // 4. Ability cooldowns + triggers
+  for (let i = 0; i < game.snake.length; i++) {
+    const seg = game.snake[i];
+    if (seg.type === 'BODY' || seg.type === 'ECHO') continue;
+    seg.cd--;
+    if (seg.cd <= 0) {
+      triggerAbility(i, seg.type);
+      seg.cd = SEG[seg.type].cooldown;
+    }
+  }
+
+  // 5. Projectiles
+  game.projectiles = game.projectiles.filter(p => {
+    p.x += p.vx; p.y += p.vy;
+    p.life--;
+    // hit enemy?
+    for (const e of game.enemies) {
+      if (Math.hypot(e.x - p.x, e.y - p.y) < 0.6) {
+        e.hp--; e.hitFlash = 6;
+        for (let i = 0; i < 10; i++) spawnParticle(e.x, e.y, '#ffaa66');
+        return false;
+      }
+    }
+    return p.life > 0;
+  });
+
+  // 6. Pulses (shockwaves)
+  game.pulses = game.pulses.filter(pu => {
+    pu.r += pu.speed;
+    pu.life--;
+    for (const e of game.enemies) {
+      if (pu.hit.has(e)) continue;
+      const d = Math.hypot(e.x - pu.x, e.y - pu.y);
+      if (d < pu.r && d > pu.r - 0.6) {
+        if (pu.damage) { e.hp--; e.hitFlash = 6; }
+        pu.hit.add(e);
+        if (pu.damage) {
+          for (let i = 0; i < 8; i++) spawnParticle(e.x, e.y, pu.color);
+        }
+      }
+    }
+    return pu.life > 0 && pu.r < pu.maxR;
+  });
+
+  // 7. Pickups physics (magnet velocity)
+  game.pickups.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.75; p.vy *= 0.75;
+    if (Math.abs(p.vx) < 0.005) p.vx = 0;
+    if (Math.abs(p.vy) < 0.005) p.vy = 0;
+    p.x = clamp(p.x, 0.5, COLS - 0.5);
+    p.y = clamp(p.y, 0.5, ROWS - 0.5);
+    p.bob += 0.18;
+  });
+
+  // 8. Enemies — move toward head every 3 ticks
+  game.enemies.forEach(e => {
+    e.hitFlash = Math.max(0, e.hitFlash - 1);
+    if (game.tick % 3 === 0) {
+      // shortest path on torus
+      let dx = head.x - e.x, dy = head.y - e.y;
+      if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
+      if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0.1) {
+        e.x = (e.x + dx / dist * 0.35 + COLS) % COLS;
+        e.y = (e.y + dy / dist * 0.35 + ROWS) % ROWS;
+      }
+    }
+  });
+
+  // 9. Snake-enemy contact: push enemy away (no death in feel test)
+  game.enemies.forEach(e => {
+    for (const seg of game.snake) {
+      let dx = e.x - seg.x, dy = e.y - seg.y;
+      if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
+      if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
+      const d = Math.hypot(dx, dy);
+      if (d < 0.8 && d > 0) {
+        e.x = (e.x + dx / d * 1.0 + COLS) % COLS;
+        e.y = (e.y + dy / d * 1.0 + ROWS) % ROWS;
+        break;
+      }
+    }
+  });
+
+  // 10. Clean dead enemies + respawn
+  const before = game.enemies.length;
+  game.enemies = game.enemies.filter(e => e.hp > 0);
+  const killed = before - game.enemies.length;
+  game.kills += killed;
+  for (let i = 0; i < killed; i++) {
+    setTimeout(spawnEnemy, 800 + rand(1400));
+    if (Math.random() < 0.35) setTimeout(spawnPickup, 400 + rand(600));
+  }
+
+  // 11. Particles + flashes
+  game.particles = game.particles.filter(pt => {
+    pt.x += pt.vx; pt.y += pt.vy;
+    pt.vx *= 0.88; pt.vy *= 0.88;
+    pt.life--;
+    return pt.life > 0;
+  });
+  game.flashes = game.flashes.filter(f => { f.life--; return f.life > 0; });
+}
+
+// === ABILITY TRIGGERS ===
+function triggerAbility(i, abilityType) {
+  const seg = game.snake[i];
+  spawnFlash({ x: seg.x, y: seg.y, type: abilityType });
+
+  // direction = where segment in front of this is, vs this
+  // (front = closer to head = lower index)
+  let ndir = { x: 1, y: 0 };
+  if (i > 0) {
+    const front = game.snake[i - 1];
+    let dx = front.x - seg.x, dy = front.y - seg.y;
+    // unwrap
+    if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
+    if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
+    const len = Math.hypot(dx, dy) || 1;
+    ndir = { x: dx / len, y: dy / len };
+  } else {
+    ndir = { ...game.headDir };
+  }
+
+  if (abilityType === 'FLAME') {
+    game.projectiles.push({
+      x: seg.x, y: seg.y,
+      vx: ndir.x * 0.5, vy: ndir.y * 0.5,
+      life: 30, color: '#ff6b35'
+    });
+  } else if (abilityType === 'MAGNET') {
+    game.pickups.forEach(p => {
+      let dx = seg.x - p.x, dy = seg.y - p.y;
+      if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
+      if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0.3 && dist < 6) {
+        p.vx = dx / dist * 0.45;
+        p.vy = dy / dist * 0.45;
+      }
+    });
+    // visual pulse (non-damaging)
+    game.pulses.push({
+      x: seg.x, y: seg.y, r: 0, maxR: 6,
+      speed: 0.6, life: 10,
+      color: '#a64bff', damage: false, hit: new Set()
+    });
+  } else if (abilityType === 'SHIELD') {
+    // damaging shockwave around this segment
+    game.pulses.push({
+      x: seg.x, y: seg.y, r: 0, maxR: 3,
+      speed: 0.3, life: 18,
+      color: '#4bd9ff', damage: true, hit: new Set()
+    });
+  }
+
+  // === ECHO CHAIN ===
+  // If the segment immediately BEHIND this is ECHO, fire the same ability from there.
+  // Chains: [Flame][Echo][Echo] = 3 flames.
+  if (i + 1 < game.snake.length && game.snake[i + 1].type === 'ECHO') {
+    triggerAbility(i + 1, abilityType);
+  }
+}
+
+// === RENDER ===
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+function render() {
+  ctx.fillStyle = '#0a0b11';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // subtle grid
+  ctx.strokeStyle = '#11131c';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= COLS; x++) {
+    ctx.beginPath();
+    ctx.moveTo(x * TILE + 0.5, 0);
+    ctx.lineTo(x * TILE + 0.5, ROWS * TILE);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= ROWS; y++) {
+    ctx.beginPath();
+    ctx.moveTo(0, y * TILE + 0.5);
+    ctx.lineTo(COLS * TILE, y * TILE + 0.5);
+    ctx.stroke();
+  }
+
+  // pickups
+  game.pickups.forEach(p => {
+    const px = (p.x + 0.5) * TILE;
+    const py = (p.y + 0.5) * TILE + Math.sin(p.bob) * 3;
+    const c = SEG[p.type].color;
+    ctx.fillStyle = c;
+    ctx.shadowColor = c;
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(px, py, TILE * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(SEG[p.type].label, px, py);
+  });
+
+  // pulses (shockwaves)
+  game.pulses.forEach(pu => {
+    ctx.strokeStyle = pu.color;
+    ctx.lineWidth = pu.damage ? 3 : 2;
+    ctx.globalAlpha = Math.max(0, pu.life / 18) * 0.9;
+    ctx.beginPath();
+    ctx.arc((pu.x + 0.5) * TILE, (pu.y + 0.5) * TILE, pu.r * TILE, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+
+  // enemies
+  game.enemies.forEach(e => {
+    const ex = (e.x + 0.5) * TILE;
+    const ey = (e.y + 0.5) * TILE;
+    ctx.fillStyle = e.hitFlash > 0 ? '#fff' : '#a04068';
+    ctx.beginPath();
+    ctx.arc(ex, ey, TILE * 0.34, 0, Math.PI * 2);
+    ctx.fill();
+    // eyes
+    if (e.hitFlash === 0) {
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(ex - 4, ey - 2, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex + 4, ey - 2, 2, 0, Math.PI * 2); ctx.fill();
+    }
+  });
+
+  // segment flashes (briefly highlight when ability triggers)
+  game.flashes.forEach(f => {
+    ctx.fillStyle = f.color;
+    ctx.globalAlpha = (f.life / 8) * 0.4;
+    ctx.beginPath();
+    ctx.arc((f.x + 0.5) * TILE, (f.y + 0.5) * TILE, TILE * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // snake
+  game.snake.forEach((seg, i) => {
+    const isHead = i === 0;
+    const sx = (seg.x + 0.5) * TILE;
+    const sy = (seg.y + 0.5) * TILE;
+    const def = SEG[seg.type];
+    ctx.fillStyle = isHead ? '#f0f0ff' : def.color;
+    ctx.shadowColor = isHead ? '#f0f0ff' : def.color;
+    ctx.shadowBlur = isHead ? 10 : (seg.type === 'BODY' ? 0 : 12);
+    ctx.beginPath();
+    ctx.arc(sx, sy, TILE * (isHead ? 0.42 : 0.36), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if (!isHead && seg.type !== 'BODY') {
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(def.label, sx, sy);
+    }
+
+    // head eyes
+    if (isHead) {
+      const dir = game.headDir;
+      ctx.fillStyle = '#000';
+      const ox1 = dir.x * 5 - dir.y * 5;
+      const oy1 = dir.y * 5 + dir.x * 5;
+      const ox2 = dir.x * 5 + dir.y * 5;
+      const oy2 = dir.y * 5 - dir.x * 5;
+      ctx.beginPath(); ctx.arc(sx + ox1, sy + oy1, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx + ox2, sy + oy2, 2.5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // cooldown indicator for ability segments
+    if (seg.type !== 'BODY' && seg.type !== 'ECHO' && def.cooldown > 0) {
+      const pct = clamp(1 - seg.cd / def.cooldown, 0, 1);
+      if (pct < 1) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sx, sy, TILE * 0.44, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  });
+
+  // projectiles
+  game.projectiles.forEach(p => {
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc((p.x + 0.5) * TILE, (p.y + 0.5) * TILE, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+
+  // particles
+  game.particles.forEach(pt => {
+    ctx.fillStyle = pt.color;
+    ctx.globalAlpha = clamp(pt.life / pt.maxLife, 0, 1);
+    ctx.fillRect((pt.x + 0.5) * TILE - 2, (pt.y + 0.5) * TILE - 2, 4, 4);
+    ctx.globalAlpha = 1;
+  });
+
+  updatePanel();
+}
+
+function updatePanel() {
+  document.getElementById('stat-len').textContent = game.snake.length;
+  document.getElementById('stat-kills').textContent = game.kills;
+  document.getElementById('stat-speed').textContent = game.tickMs + 'ms';
+  const chain = document.getElementById('chain');
+  chain.innerHTML = '';
+  game.snake.forEach((seg, i) => {
+    const el = document.createElement('div');
+    el.className = 'chain-seg';
+    const def = SEG[seg.type];
+    if (i === 0) {
+      el.style.background = '#f0f0ff';
+      el.textContent = '◉';
+    } else {
+      el.style.background = def.color;
+      el.textContent = def.label;
+    }
+    chain.appendChild(el);
+    if (i < game.snake.length - 1) {
+      const ar = document.createElement('div');
+      ar.className = 'arrow';
+      ar.textContent = '›';
+      chain.appendChild(ar);
+    }
+  });
+}
+
+// === MAIN LOOP ===
+function loop(now) {
+  if (now - game.lastStep >= game.tickMs) {
+    game.lastStep = now;
+    step();
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+
+// === BOOT ===
+reset();
+game.lastStep = performance.now();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

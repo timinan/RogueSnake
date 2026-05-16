@@ -221,6 +221,8 @@ function reset() {
     pendingSpawns: { enemy: [], pickup: [] },
     iframes: 0,    // NEW: invulnerability tick counter
     dead: false,   // NEW: game-over flag
+    deathTime: 0,    // NEW: performance.now() captured when snake dies
+    startTime: 0,    // NEW: performance.now() captured when game starts
     choosingStart: true,
     choosing: false,
     targetEnemyCount: 6, // NEW
@@ -266,6 +268,7 @@ function dropTail() {
 function pickStartingSegment(type) {
   addSegment(type);
   game.choosingStart = false;
+  game.startTime = performance.now();
   for (let i = 0; i < 6; i++) spawnEnemy();
   for (let i = 0; i < 3; i++) spawnPickup();
 }
@@ -309,7 +312,10 @@ function applyDamage() {
     }
   }
   game.iframes = 6;
-  if (game.snake.length === 1) game.dead = true;
+  if (game.snake.length === 1) {
+    game.dead = true;
+    game.deathTime = performance.now();
+  }
 }
 
 // === INPUT ===
@@ -765,16 +771,24 @@ function render() {
   }
 
   if (game.dead) {
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillStyle = 'rgba(10,11,17,0.78)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#ff4060';
-    ctx.font = 'bold 48px monospace';
+
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('DEAD', canvas.width / 2, canvas.height / 2 - 16);
+
+    ctx.fillStyle = '#ff4060';
+    ctx.font = 'bold 56px monospace';
+    ctx.fillText('DEAD', canvas.width / 2, canvas.height / 2 - 50);
+
+    const seconds = Math.max(0, Math.floor((game.deathTime - game.startTime) / 1000));
     ctx.fillStyle = '#d4d7e3';
     ctx.font = '16px monospace';
-    ctx.fillText('press R to restart', canvas.width / 2, canvas.height / 2 + 24);
+    ctx.fillText(`survived ${seconds}s · ${game.kills} kills`, canvas.width / 2, canvas.height / 2 + 6);
+
+    ctx.fillStyle = '#6a6f85';
+    ctx.font = '14px monospace';
+    ctx.fillText('press R to restart', canvas.width / 2, canvas.height / 2 + 40);
   }
 
   updatePanel();

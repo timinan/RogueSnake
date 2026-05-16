@@ -201,10 +201,10 @@ let game;
 function reset() {
   game = {
     snake: [
-      { x: 12, y: 9, type: 'HEAD', cd: 0 },
-      { x: 11, y: 9, type: 'BODY', cd: 0 },
-      { x: 10, y: 9, type: 'BODY', cd: 0 },
-      { x: 9,  y: 9, type: 'BODY', cd: 0 },
+      { x: 12, y: 9, type: 'HEAD', cd: 0, px: 12, py: 9 },
+      { x: 11, y: 9, type: 'BODY', cd: 0, px: 11, py: 9 },
+      { x: 10, y: 9, type: 'BODY', cd: 0, px: 10, py: 9 },
+      { x: 9,  y: 9, type: 'BODY', cd: 0, px: 9,  py: 9 },
     ],
     headDir: { x: 1, y: 0 },
     queuedDir: { x: 1, y: 0 },
@@ -216,7 +216,7 @@ function reset() {
     flashes: [], // segment trigger flashes
     tick: 0,
     kills: 0,
-    tickMs: 150,
+    tickMs: 200,
     lastStep: 0,
     pendingSpawns: { enemy: [], pickup: [] },
     iframes: 0,    // NEW: invulnerability tick counter
@@ -248,15 +248,15 @@ function emptyTile() {
 
 function spawnEnemy() {
   const t = emptyTile();
-  game.enemies.push({ x: t.x, y: t.y, hp: 1, hitFlash: 0 });
+  game.enemies.push({ x: t.x, y: t.y, hp: 1, hitFlash: 0, px: t.x, py: t.y });
 }
 function spawnPickup() {
   const t = emptyTile();
-  game.pickups.push({ x: t.x, y: t.y, vx: 0, vy: 0, type: 'BODY', bob: Math.random() * Math.PI * 2 });
+  game.pickups.push({ x: t.x, y: t.y, vx: 0, vy: 0, type: 'BODY', bob: Math.random() * Math.PI * 2, px: t.x, py: t.y });
 }
 function addSegment(type) {
   const tail = game.snake[game.snake.length - 1];
-  game.snake.push({ x: tail.x, y: tail.y, type, cd: 0 });
+  game.snake.push({ x: tail.x, y: tail.y, type, cd: 0, px: tail.x, py: tail.y });
 }
 function dropTail() {
   if (game.snake.length > 3) {
@@ -368,14 +368,15 @@ function step() {
     game.headDir = q;
   }
 
-  // 2. Move snake — each segment takes the position of the one in front
-  const oldPositions = game.snake.map(s => ({ x: s.x, y: s.y }));
+  // 2. Move snake — each segment takes the position of the one in front.
+  //    Capture (px, py) for every segment first; render lerps from px/py to x/y.
+  for (const s of game.snake) { s.px = s.x; s.py = s.y; }
   const head = game.snake[0];
   head.x = (head.x + game.headDir.x + COLS) % COLS;
   head.y = (head.y + game.headDir.y + ROWS) % ROWS;
   for (let i = 1; i < game.snake.length; i++) {
-    game.snake[i].x = oldPositions[i - 1].x;
-    game.snake[i].y = oldPositions[i - 1].y;
+    game.snake[i].x = game.snake[i - 1].px;
+    game.snake[i].y = game.snake[i - 1].py;
   }
 
   // 3. Pickup collision (any segment can collect)
@@ -436,8 +437,9 @@ function step() {
     return pu.life > 0 && pu.r < pu.maxR;
   });
 
-  // 7. Pickups physics (magnet velocity)
+  // 7. Pickups physics (magnet velocity) — capture px/py for render lerp.
   game.pickups.forEach(p => {
+    p.px = p.x; p.py = p.y;
     p.x += p.vx; p.y += p.vy;
     p.vx *= 0.75; p.vy *= 0.75;
     if (Math.abs(p.vx) < 0.005) p.vx = 0;
@@ -447,19 +449,18 @@ function step() {
     p.bob += 0.18;
   });
 
-  // 8. Enemies — move toward head every 3 ticks
+  // 8. Enemies — move toward head every tick (small step + render lerp = smooth glide).
   game.enemies.forEach(e => {
     e.hitFlash = Math.max(0, e.hitFlash - 1);
-    if (game.tick % 3 === 0) {
-      // shortest path on torus
-      let dx = head.x - e.x, dy = head.y - e.y;
-      if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
-      if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 0.1) {
-        e.x = (e.x + dx / dist * 0.35 + COLS) % COLS;
-        e.y = (e.y + dy / dist * 0.35 + ROWS) % ROWS;
-      }
+    e.px = e.x; e.py = e.y;
+    // shortest path on torus
+    let dx = head.x - e.x, dy = head.y - e.y;
+    if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
+    if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 0.1) {
+      e.x = (e.x + dx / dist * 0.13 + COLS) % COLS;
+      e.y = (e.y + dy / dist * 0.13 + ROWS) % ROWS;
     }
   });
 
@@ -570,6 +571,14 @@ function triggerAbility(i, abilityType) {
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
+// Lerp on a wrapped axis: takes the shortest path across the torus seam.
+function wrapLerp(a, b, t, max) {
+  let d = b - a;
+  if (d > max / 2) d -= max;
+  else if (d < -max / 2) d += max;
+  return (a + d * t + max) % max;
+}
+
 function renderChoiceCard(title) {
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -621,6 +630,9 @@ function renderChoiceCard(title) {
 }
 
 function render() {
+  // Fraction-of-a-tick since the last step; lerp visible positions between px,py and x,y.
+  const lerpT = Math.min(1, (performance.now() - game.lastStep) / game.tickMs);
+
   ctx.fillStyle = '#0a0b11';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -642,8 +654,10 @@ function render() {
 
   // pickups
   game.pickups.forEach(p => {
-    const px = (p.x + 0.5) * TILE;
-    const py = (p.y + 0.5) * TILE + Math.sin(p.bob) * 3;
+    const rx = wrapLerp(p.px, p.x, lerpT, COLS);
+    const ry = wrapLerp(p.py, p.y, lerpT, ROWS);
+    const px = (rx + 0.5) * TILE;
+    const py = (ry + 0.5) * TILE + Math.sin(p.bob) * 3;
     const isBody = p.type === 'BODY';
     const c = isBody ? '#7ad9a0' : SEG[p.type].color;
     ctx.fillStyle = c;
@@ -673,8 +687,10 @@ function render() {
 
   // enemies
   game.enemies.forEach(e => {
-    const ex = (e.x + 0.5) * TILE;
-    const ey = (e.y + 0.5) * TILE;
+    const rx = wrapLerp(e.px, e.x, lerpT, COLS);
+    const ry = wrapLerp(e.py, e.y, lerpT, ROWS);
+    const ex = (rx + 0.5) * TILE;
+    const ey = (ry + 0.5) * TILE;
     ctx.fillStyle = e.hitFlash > 0 ? '#fff' : '#a04068';
     ctx.beginPath();
     ctx.arc(ex, ey, TILE * 0.34, 0, Math.PI * 2);
@@ -700,8 +716,10 @@ function render() {
   // snake
   game.snake.forEach((seg, i) => {
     const isHead = i === 0;
-    const sx = (seg.x + 0.5) * TILE;
-    const sy = (seg.y + 0.5) * TILE;
+    const rx = wrapLerp(seg.px, seg.x, lerpT, COLS);
+    const ry = wrapLerp(seg.py, seg.y, lerpT, ROWS);
+    const sx = (rx + 0.5) * TILE;
+    const sy = (ry + 0.5) * TILE;
     const def = SEG[seg.type];
     const headColor = (game.iframes > 0 && Math.floor(game.tick / 2) % 2 === 0) ? '#ff4060' : '#f0f0ff';
     ctx.fillStyle = isHead ? headColor : def.color;

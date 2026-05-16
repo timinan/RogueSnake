@@ -169,6 +169,7 @@
     <div class="ctrl-row"><span class="key">1</span> add Flame &nbsp; <span class="key">2</span> add Magnet</div>
     <div class="ctrl-row"><span class="key">3</span> add Shield &nbsp; <span class="key">4</span> add Echo</div>
     <div class="ctrl-row"><span class="key">X</span> drop tail &nbsp; <span class="key">R</span> reset</div>
+    <div class="ctrl-row"><span class="key">C</span> open choice card mid-game</div>
     <div class="ctrl-row"><span class="key">[</span> slower &nbsp; <span class="key">]</span> faster</div>
 
     <div class="hint">
@@ -330,6 +331,11 @@ document.addEventListener('keydown', e => {
   }
   else if (k === 'x') dropTail();
   else if (k === 'r') reset();
+  else if (k === 'c') {
+    if (!game.dead && !game.choosingStart) {
+      game.choosing = !game.choosing; // toggle: press C again to cancel
+    }
+  }
   else if (k === '[') game.tickMs = Math.min(400, game.tickMs + 20);
   else if (k === ']') game.tickMs = Math.max(60, game.tickMs - 20);
   else return;

@@ -207,7 +207,6 @@ function reset() {
       { x: 9,  y: 9, type: 'BODY', cd: 0, px: 9,  py: 9 },
     ],
     headDir: { x: 1, y: 0 },
-    queuedDir: { x: 1, y: 0 },
     enemies: [],
     projectiles: [],
     pickups: [],
@@ -255,8 +254,15 @@ function spawnPickup() {
   game.pickups.push({ x: t.x, y: t.y, vx: 0, vy: 0, type: 'BODY', bob: Math.random() * Math.PI * 2, px: t.x, py: t.y });
 }
 function addSegment(type) {
-  const tail = game.snake[game.snake.length - 1];
-  game.snake.push({ x: tail.x, y: tail.y, type, cd: 0, px: tail.x, py: tail.y });
+  // BODY goes to the tail (armor). Special segments insert right after the head
+  // so segment[1] is always the ability — it fires forward in the snake's heading.
+  if (type === 'BODY') {
+    const tail = game.snake[game.snake.length - 1];
+    game.snake.push({ x: tail.x, y: tail.y, type, cd: 0, px: tail.x, py: tail.y });
+  } else {
+    const after = game.snake[1] || game.snake[0];
+    game.snake.splice(1, 0, { x: after.x, y: after.y, type, cd: 0, px: after.x, py: after.y });
+  }
 }
 function dropTail() {
   if (game.snake.length > 3) {
@@ -318,15 +324,28 @@ function applyDamage() {
   }
 }
 
+// Apply direction immediately; reject only if it would reverse the chain heading
+// (head - segment[1] is the snake's true heading, accounting for the most recent turn).
+function setDir(nx, ny) {
+  if (game.snake.length >= 2) {
+    const h = game.snake[0], b = game.snake[1];
+    let dx = h.x - b.x, dy = h.y - b.y;
+    if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
+    if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
+    if (nx === -dx && ny === -dy) return;
+  }
+  game.headDir = { x: nx, y: ny };
+}
+
 // === INPUT ===
 document.addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toLowerCase();
   if (game.dead && k !== 'r') return;
-  if (k === 'arrowup' || k === 'w') game.queuedDir = { x: 0, y: -1 };
-  else if (k === 'arrowdown' || k === 's') game.queuedDir = { x: 0, y: 1 };
-  else if (k === 'arrowleft' || k === 'a') game.queuedDir = { x: -1, y: 0 };
-  else if (k === 'arrowright' || k === 'd') game.queuedDir = { x: 1, y: 0 };
+  if (k === 'arrowup' || k === 'w') setDir(0, -1);
+  else if (k === 'arrowdown' || k === 's') setDir(0, 1);
+  else if (k === 'arrowleft' || k === 'a') setDir(-1, 0);
+  else if (k === 'arrowright' || k === 'd') setDir(1, 0);
   else if (k === '1' || k === '2' || k === '3' || k === '4') {
     const map = { '1': 'FLAME', '2': 'MAGNET', '3': 'SHIELD', '4': 'ECHO' };
     const chosen = map[k];
@@ -361,12 +380,7 @@ function step() {
   if (game.iframes > 0) game.iframes--;
   game.tick++;
 
-  // 1. Apply queued direction (prevent 180° self-collide moves)
-  const cur = game.headDir;
-  const q = game.queuedDir;
-  if (!(q.x === -cur.x && q.y === -cur.y)) {
-    game.headDir = q;
-  }
+  // 1. (Direction is applied immediately in the keydown handler — no per-tick queue.)
 
   // 2. Move snake — each segment takes the position of the one in front.
   //    Capture (px, py) for every segment first; render lerps from px/py to x/y.
@@ -509,31 +523,21 @@ function triggerAbility(i, abilityType) {
   const seg = game.snake[i];
   spawnFlash({ x: seg.x, y: seg.y, type: abilityType });
 
-  // direction = where segment in front of this is, vs this
-  // (front = closer to head = lower index)
-  let ndir = { x: 1, y: 0 };
-  if (i > 0) {
-    const front = game.snake[i - 1];
-    let dx = front.x - seg.x, dy = front.y - seg.y;
-    if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
-    if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
-    const len = Math.hypot(dx, dy) || 1;
-    ndir = { x: dx / len, y: dy / len };
-  } else {
-    ndir = { ...game.headDir };
-  }
+  // Abilities fire in the snake's current heading. Chain position no longer
+  // matters for direction — every shot goes "forward."
+  const ndir = { ...game.headDir };
 
   if (abilityType === 'HEAD') {
     game.projectiles.push({
       x: seg.x, y: seg.y,
-      vx: ndir.x * 0.5, vy: ndir.y * 0.5,
-      life: 30, color: '#f0f0ff'
+      vx: ndir.x * 0.8, vy: ndir.y * 0.8,
+      life: 40, color: '#f0f0ff'
     });
   } else if (abilityType === 'FLAME') {
     game.projectiles.push({
       x: seg.x, y: seg.y,
-      vx: ndir.x * 0.5, vy: ndir.y * 0.5,
-      life: 30, color: '#ff6b35'
+      vx: ndir.x * 0.8, vy: ndir.y * 0.8,
+      life: 40, color: '#ff6b35'
     });
   } else if (abilityType === 'MAGNET') {
     game.pickups.forEach(p => {
@@ -767,9 +771,9 @@ function render() {
   game.projectiles.forEach(p => {
     ctx.fillStyle = p.color;
     ctx.shadowColor = p.color;
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 14;
     ctx.beginPath();
-    ctx.arc((p.x + 0.5) * TILE, (p.y + 0.5) * TILE, 5, 0, Math.PI * 2);
+    ctx.arc((p.x + 0.5) * TILE, (p.y + 0.5) * TILE, 9, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
   });

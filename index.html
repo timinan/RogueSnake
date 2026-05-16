@@ -161,22 +161,21 @@
     <div class="stat"><span>Enemies</span><span id="stat-enemies">6</span></div>
 
     <h3>Segment types</h3>
-    <div class="seg-row"><div class="seg-dot" style="background:#ff6b35;color:#ff6b35"></div><span><b style="color:#ff6b35">Flame</b> · fires forward</span></div>
+    <div class="seg-row"><div class="seg-dot" style="background:#ff8855;color:#ff8855"></div><span><b style="color:#ff8855">Head</b> · always a flame, fires forward</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#a64bff;color:#a64bff"></div><span><b style="color:#a64bff">Magnet</b> · pulls pickups</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#4bd9ff;color:#4bd9ff"></div><span><b style="color:#4bd9ff">Shield</b> · damaging shockwave</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#ffd84b;color:#ffd84b"></div><span><b style="color:#ffd84b">Echo</b> · repeats segment in front</span></div>
 
     <h3>Controls</h3>
     <div class="ctrl-row"><span class="key">WASD</span> / <span class="key">↑↓←→</span> steer</div>
-    <div class="ctrl-row"><span class="key">1</span> add Flame &nbsp; <span class="key">2</span> add Magnet</div>
-    <div class="ctrl-row"><span class="key">3</span> add Shield &nbsp; <span class="key">4</span> add Echo</div>
+    <div class="ctrl-row"><span class="key">1</span> add Magnet &nbsp; <span class="key">2</span> add Shield &nbsp; <span class="key">3</span> add Echo</div>
     <div class="ctrl-row"><span class="key">X</span> drop tail &nbsp; <span class="key">R</span> reset</div>
     <div class="ctrl-row"><span class="key">C</span> open choice card mid-game</div>
     <div class="ctrl-row"><span class="key">[</span> slower &nbsp; <span class="key">]</span> faster</div>
     <div class="ctrl-row"><span class="key">;</span> fewer enemies &nbsp; <span class="key">'</span> more enemies</div>
 
     <div class="hint">
-      Try <b style="color:#ff6b35">F</b><b style="color:#ffd84b">E</b><b style="color:#ffd84b">E</b> — Flame followed by two Echoes triples your fire output. Then add a <b style="color:#a64bff">M</b> magnet in front to drag enemies into the spray.
+      The head is a flame — it fires homing fireballs forward. Add an <b style="color:#ffd84b">Echo</b> right behind it and you get two fireballs per shot. Stack more Echoes for more shots, or add a <b style="color:#a64bff">Magnet</b> to drag enemies into the spray.
     </div>
   </div>
 </div>
@@ -225,7 +224,7 @@ function reset() {
     startTime: 0,    // NEW: performance.now() captured when game starts
     choosingStart: true,
     choosing: false,
-    targetEnemyCount: 6, // NEW
+    targetEnemyCount: 4, // NEW
   };
   // Enemies/pickups spawn after the starting choice is made.
 }
@@ -276,7 +275,7 @@ function pickStartingSegment(type) {
   addSegment(type);
   game.choosingStart = false;
   game.startTime = performance.now();
-  for (let i = 0; i < 6; i++) spawnEnemy();
+  for (let i = 0; i < game.targetEnemyCount; i++) spawnEnemy();
   for (let i = 0; i < 3; i++) spawnPickup();
 }
 
@@ -357,8 +356,8 @@ document.addEventListener('keydown', e => {
   else if (k === 'arrowdown' || k === 's') setDir(0, 1);
   else if (k === 'arrowleft' || k === 'a') setDir(-1, 0);
   else if (k === 'arrowright' || k === 'd') setDir(1, 0);
-  else if (k === '1' || k === '2' || k === '3' || k === '4') {
-    const map = { '1': 'FLAME', '2': 'MAGNET', '3': 'SHIELD', '4': 'ECHO' };
+  else if (k === '1' || k === '2' || k === '3') {
+    const map = { '1': 'MAGNET', '2': 'SHIELD', '3': 'ECHO' };
     const chosen = map[k];
     if (game.choosingStart) {
       pickStartingSegment(chosen);
@@ -456,9 +455,9 @@ function step() {
     }
     p.x += p.vx; p.y += p.vy;
     p.life--;
-    // hit enemy?
+    // hit enemy? (threshold scaled for the bigger enemy hitbox)
     for (const e of game.enemies) {
-      if (Math.hypot(e.x - p.x, e.y - p.y) < 0.6) {
+      if (Math.hypot(e.x - p.x, e.y - p.y) < 0.7) {
         e.hp--; e.hitFlash = 6;
         for (let i = 0; i < 10; i++) spawnParticle(e.x, e.y, '#ffaa66');
         return false;
@@ -512,7 +511,9 @@ function step() {
     }
   });
 
-  // 9. Snake-enemy contact: apply damage (decay rule)
+  // 9. Snake-enemy contact: apply damage (decay rule).
+  //    Threshold ~ enemy-radius (0.5) + body-radius (0.18) so damage triggers
+  //    at visual contact with the new smaller snake / bigger enemies.
   if (game.iframes <= 0) {
     let contacted = false;
     outer:
@@ -521,7 +522,7 @@ function step() {
         let dx = e.x - seg.x, dy = e.y - seg.y;
         if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
         if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
-        if (Math.hypot(dx, dy) < 0.8) {
+        if (Math.hypot(dx, dy) < 0.65) {
           contacted = true;
           break outer;
         }
@@ -594,8 +595,8 @@ function triggerAbility(i, abilityType) {
 
   // === ECHO CHAIN ===
   // If the segment immediately BEHIND this is ECHO, fire the same ability from there.
-  // Chains: [Flame][Echo][Echo] = 3 flames. HEAD is excluded — its shot does not chain.
-  if (abilityType !== 'HEAD' && i + 1 < game.snake.length && game.snake[i + 1].type === 'ECHO') {
+  // [Head][Echo] = 2 fireballs; [Head][Echo][Echo] = 3 fireballs; etc.
+  if (i + 1 < game.snake.length && game.snake[i + 1].type === 'ECHO') {
     triggerAbility(i + 1, abilityType);
   }
 }
@@ -623,10 +624,9 @@ function renderChoiceCard(title) {
   ctx.fillText(title, canvas.width / 2, 90);
 
   const opts = [
-    { key: '1', type: 'FLAME',  hint: 'fires forward' },
-    { key: '2', type: 'MAGNET', hint: 'pulls pickups' },
-    { key: '3', type: 'SHIELD', hint: 'damaging shockwave' },
-    { key: '4', type: 'ECHO',   hint: 'repeats the segment in front' },
+    { key: '1', type: 'MAGNET', hint: 'pulls pickups' },
+    { key: '2', type: 'SHIELD', hint: 'damaging shockwave' },
+    { key: '3', type: 'ECHO',   hint: 'amplifies the segment in front (echo behind the head doubles your fire)' },
   ];
   const cx = canvas.width / 2;
   const startY = 170;
@@ -726,13 +726,13 @@ function render() {
     const ey = (ry + 0.5) * TILE;
     ctx.fillStyle = e.hitFlash > 0 ? '#fff' : '#a04068';
     ctx.beginPath();
-    ctx.arc(ex, ey, TILE * 0.34, 0, Math.PI * 2);
+    ctx.arc(ex, ey, TILE * 0.5, 0, Math.PI * 2);
     ctx.fill();
     // eyes
     if (e.hitFlash === 0) {
       ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.arc(ex - 4, ey - 2, 2, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(ex + 4, ey - 2, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex - 5, ey - 3, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex + 5, ey - 3, 2.5, 0, Math.PI * 2); ctx.fill();
     }
   });
 
@@ -759,13 +759,13 @@ function render() {
     ctx.shadowColor = isHead ? headColor : def.color;
     ctx.shadowBlur = isHead ? 10 : (seg.type === 'BODY' ? 0 : 12);
     ctx.beginPath();
-    ctx.arc(sx, sy, TILE * (isHead ? 0.42 : 0.36), 0, Math.PI * 2);
+    ctx.arc(sx, sy, TILE * (isHead ? 0.22 : 0.18), 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
 
     if (!isHead && seg.type !== 'BODY') {
       ctx.fillStyle = '#000';
-      ctx.font = 'bold 12px monospace';
+      ctx.font = 'bold 8px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(def.label, sx, sy);
@@ -775,12 +775,12 @@ function render() {
     if (isHead) {
       const dir = game.headDir;
       ctx.fillStyle = '#000';
-      const ox1 = dir.x * 5 - dir.y * 5;
-      const oy1 = dir.y * 5 + dir.x * 5;
-      const ox2 = dir.x * 5 + dir.y * 5;
-      const oy2 = dir.y * 5 - dir.x * 5;
-      ctx.beginPath(); ctx.arc(sx + ox1, sy + oy1, 2.5, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(sx + ox2, sy + oy2, 2.5, 0, Math.PI * 2); ctx.fill();
+      const ox1 = dir.x * 3 - dir.y * 3;
+      const oy1 = dir.y * 3 + dir.x * 3;
+      const ox2 = dir.x * 3 + dir.y * 3;
+      const oy2 = dir.y * 3 - dir.x * 3;
+      ctx.beginPath(); ctx.arc(sx + ox1, sy + oy1, 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx + ox2, sy + oy2, 1.5, 0, Math.PI * 2); ctx.fill();
     }
 
     // cooldown indicator for ability segments
@@ -790,7 +790,7 @@ function render() {
         ctx.strokeStyle = 'rgba(255,255,255,0.7)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(sx, sy, TILE * 0.44, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2);
+        ctx.arc(sx, sy, TILE * 0.26, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2);
         ctx.stroke();
       }
     }

@@ -188,7 +188,8 @@ const COLS = 25, ROWS = 18, TILE = 32;
 
 // Segment definitions (positional triggers)
 const SEG = {
-  HEAD:   { color: '#f0f0ff', label: '◉', cooldown: 30 },
+  // The head is a flame-head for this demo: shoots like a Flame segment.
+  HEAD:   { color: '#ff8855', label: '◉', cooldown: 18 },
   BODY:   { color: '#5a607a', label: '·',  cooldown: 0 },
   FLAME:  { color: '#ff6b35', label: 'F',  cooldown: 18 },
   MAGNET: { color: '#a64bff', label: 'M',  cooldown: 6 },
@@ -326,6 +327,9 @@ function applyDamage() {
 
 // Apply direction immediately; reject only if it would reverse the chain heading
 // (head - segment[1] is the snake's true heading, accounting for the most recent turn).
+// Also: early-tick. If we're more than halfway through the current tick window,
+// fire step() now so the head visibly turns this frame instead of waiting up to
+// tickMs ms for the next scheduled tick.
 function setDir(nx, ny) {
   if (game.snake.length >= 2) {
     const h = game.snake[0], b = game.snake[1];
@@ -334,7 +338,14 @@ function setDir(nx, ny) {
     if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
     if (nx === -dx && ny === -dy) return;
   }
+  if (nx === game.headDir.x && ny === game.headDir.y) return;
   game.headDir = { x: nx, y: ny };
+  const now = performance.now();
+  if (!game.dead && !game.choosingStart && !game.choosing &&
+      now - game.lastStep > game.tickMs * 0.5) {
+    game.lastStep = now;
+    step();
+  }
 }
 
 // === INPUT ===
@@ -420,6 +431,29 @@ function step() {
 
   // 5. Projectiles
   game.projectiles = game.projectiles.filter(p => {
+    // Homing: gently steer toward the nearest enemy (torus-aware), preserving speed.
+    if (p.homing && game.enemies.length > 0) {
+      let bestD = Infinity, bestDx = 0, bestDy = 0;
+      for (const e of game.enemies) {
+        let dx = e.x - p.x, dy = e.y - p.y;
+        if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
+        if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
+        const d = Math.hypot(dx, dy);
+        if (d < bestD) { bestD = d; bestDx = dx; bestDy = dy; }
+      }
+      if (bestD < 8) {
+        const speed = Math.hypot(p.vx, p.vy);
+        const tx = bestDx / bestD, ty = bestDy / bestD;
+        const turn = 0.2;
+        const nvx = p.vx * (1 - turn) + tx * speed * turn;
+        const nvy = p.vy * (1 - turn) + ty * speed * turn;
+        const newMag = Math.hypot(nvx, nvy);
+        if (newMag > 0) {
+          p.vx = (nvx / newMag) * speed;
+          p.vy = (nvy / newMag) * speed;
+        }
+      }
+    }
     p.x += p.vx; p.y += p.vy;
     p.life--;
     // hit enemy?
@@ -527,17 +561,12 @@ function triggerAbility(i, abilityType) {
   // matters for direction — every shot goes "forward."
   const ndir = { ...game.headDir };
 
-  if (abilityType === 'HEAD') {
+  if (abilityType === 'HEAD' || abilityType === 'FLAME') {
+    // Fireballs: fast, big, and gently home in on the nearest enemy.
     game.projectiles.push({
       x: seg.x, y: seg.y,
-      vx: ndir.x * 0.8, vy: ndir.y * 0.8,
-      life: 40, color: '#f0f0ff'
-    });
-  } else if (abilityType === 'FLAME') {
-    game.projectiles.push({
-      x: seg.x, y: seg.y,
-      vx: ndir.x * 0.8, vy: ndir.y * 0.8,
-      life: 40, color: '#ff6b35'
+      vx: ndir.x * 1.4, vy: ndir.y * 1.4,
+      life: 35, color: '#ff6b35', homing: true
     });
   } else if (abilityType === 'MAGNET') {
     game.pickups.forEach(p => {
@@ -725,7 +754,7 @@ function render() {
     const sx = (rx + 0.5) * TILE;
     const sy = (ry + 0.5) * TILE;
     const def = SEG[seg.type];
-    const headColor = (game.iframes > 0 && Math.floor(game.tick / 2) % 2 === 0) ? '#ff4060' : '#f0f0ff';
+    const headColor = (game.iframes > 0 && Math.floor(game.tick / 2) % 2 === 0) ? '#ff4060' : def.color;
     ctx.fillStyle = isHead ? headColor : def.color;
     ctx.shadowColor = isHead ? headColor : def.color;
     ctx.shadowBlur = isHead ? 10 : (seg.type === 'BODY' ? 0 : 12);
@@ -771,9 +800,9 @@ function render() {
   game.projectiles.forEach(p => {
     ctx.fillStyle = p.color;
     ctx.shadowColor = p.color;
-    ctx.shadowBlur = 14;
+    ctx.shadowBlur = 20;
     ctx.beginPath();
-    ctx.arc((p.x + 0.5) * TILE, (p.y + 0.5) * TILE, 9, 0, Math.PI * 2);
+    ctx.arc((p.x + 0.5) * TILE, (p.y + 0.5) * TILE, 12, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
   });
@@ -835,7 +864,7 @@ function updatePanel() {
     el.className = 'chain-seg';
     const def = SEG[seg.type];
     if (i === 0) {
-      el.style.background = '#f0f0ff';
+      el.style.background = def.color;
       el.textContent = '◉';
     } else {
       el.style.background = def.color;

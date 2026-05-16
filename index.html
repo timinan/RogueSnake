@@ -215,7 +215,7 @@ function reset() {
     flashes: [], // segment trigger flashes
     tick: 0,
     kills: 0,
-    tickMs: 200,
+    tickMs: 120,
     lastStep: 0,
     pendingSpawns: { enemy: [], pickup: [] },
     iframes: 0,    // NEW: invulnerability tick counter
@@ -758,9 +758,10 @@ function render() {
     ctx.fillStyle = isHead ? headColor : def.color;
     ctx.shadowColor = isHead ? headColor : def.color;
     ctx.shadowBlur = isHead ? 10 : (seg.type === 'BODY' ? 0 : 12);
-    ctx.beginPath();
-    ctx.arc(sx, sy, TILE * (isHead ? 0.40 : 0.32), 0, Math.PI * 2);
-    ctx.fill();
+    // Square blocks: fill most of the tile so adjacent segments visually connect.
+    const side = TILE * (isHead ? 0.75 : 0.65);
+    const half = side / 2;
+    ctx.fillRect(sx - half, sy - half, side, side);
     ctx.shadowBlur = 0;
 
     if (!isHead && seg.type !== 'BODY') {
@@ -783,14 +784,14 @@ function render() {
       ctx.beginPath(); ctx.arc(sx + ox2, sy + oy2, 2.5, 0, Math.PI * 2); ctx.fill();
     }
 
-    // cooldown indicator for ability segments
+    // cooldown indicator for ability segments (ring around the square)
     if (seg.type !== 'BODY' && seg.type !== 'ECHO' && def.cooldown > 0) {
       const pct = clamp(1 - seg.cd / def.cooldown, 0, 1);
       if (pct < 1) {
         ctx.strokeStyle = 'rgba(255,255,255,0.7)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(sx, sy, TILE * 0.42, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2);
+        ctx.arc(sx, sy, TILE * 0.56, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2);
         ctx.stroke();
       }
     }

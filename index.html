@@ -184,11 +184,12 @@ const COLS = 25, ROWS = 18, TILE = 32;
 
 // Segment definitions (positional triggers)
 const SEG = {
+  HEAD:   { color: '#f0f0ff', label: '◉', cooldown: 30 },
   BODY:   { color: '#5a607a', label: '·',  cooldown: 0 },
   FLAME:  { color: '#ff6b35', label: 'F',  cooldown: 18 },
   MAGNET: { color: '#a64bff', label: 'M',  cooldown: 6 },
   SHIELD: { color: '#4bd9ff', label: 'S',  cooldown: 14 },
-  ECHO:   { color: '#ffd84b', label: 'E',  cooldown: 0 }, // reactive
+  ECHO:   { color: '#ffd84b', label: 'E',  cooldown: 0 },
 };
 
 // === GAME STATE ===
@@ -196,7 +197,7 @@ let game;
 function reset() {
   game = {
     snake: [
-      { x: 12, y: 9, type: 'BODY', cd: 0 },
+      { x: 12, y: 9, type: 'HEAD', cd: 0 },
       { x: 11, y: 9, type: 'BODY', cd: 0 },
       { x: 10, y: 9, type: 'BODY', cd: 0 },
     ],
@@ -477,7 +478,6 @@ function triggerAbility(i, abilityType) {
   if (i > 0) {
     const front = game.snake[i - 1];
     let dx = front.x - seg.x, dy = front.y - seg.y;
-    // unwrap
     if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
     if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
     const len = Math.hypot(dx, dy) || 1;
@@ -486,7 +486,13 @@ function triggerAbility(i, abilityType) {
     ndir = { ...game.headDir };
   }
 
-  if (abilityType === 'FLAME') {
+  if (abilityType === 'HEAD') {
+    game.projectiles.push({
+      x: seg.x, y: seg.y,
+      vx: ndir.x * 0.5, vy: ndir.y * 0.5,
+      life: 30, color: '#f0f0ff'
+    });
+  } else if (abilityType === 'FLAME') {
     game.projectiles.push({
       x: seg.x, y: seg.y,
       vx: ndir.x * 0.5, vy: ndir.y * 0.5,
@@ -503,14 +509,12 @@ function triggerAbility(i, abilityType) {
         p.vy = dy / dist * 0.45;
       }
     });
-    // visual pulse (non-damaging)
     game.pulses.push({
       x: seg.x, y: seg.y, r: 0, maxR: 6,
       speed: 0.6, life: 10,
       color: '#a64bff', damage: false, hit: new Set()
     });
   } else if (abilityType === 'SHIELD') {
-    // damaging shockwave around this segment
     game.pulses.push({
       x: seg.x, y: seg.y, r: 0, maxR: 3,
       speed: 0.3, life: 18,
@@ -520,8 +524,8 @@ function triggerAbility(i, abilityType) {
 
   // === ECHO CHAIN ===
   // If the segment immediately BEHIND this is ECHO, fire the same ability from there.
-  // Chains: [Flame][Echo][Echo] = 3 flames.
-  if (i + 1 < game.snake.length && game.snake[i + 1].type === 'ECHO') {
+  // Chains: [Flame][Echo][Echo] = 3 flames. HEAD is excluded — its shot does not chain.
+  if (abilityType !== 'HEAD' && i + 1 < game.snake.length && game.snake[i + 1].type === 'ECHO') {
     triggerAbility(i + 1, abilityType);
   }
 }

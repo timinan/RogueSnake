@@ -276,7 +276,7 @@ function pickStartingSegment(type) {
   game.choosingStart = false;
   game.startTime = performance.now();
   for (let i = 0; i < game.targetEnemyCount; i++) spawnEnemy();
-  for (let i = 0; i < 3; i++) spawnPickup();
+  for (let i = 0; i < 2; i++) spawnPickup();
 }
 
 function spawnParticle(x, y, color) {
@@ -410,7 +410,6 @@ function step() {
       if (Math.hypot(dx, dy) < 0.7) {
         addSegment(p.type);
         for (let i = 0; i < 14; i++) spawnParticle(p.x, p.y, SEG[p.type].color);
-        setTimeout(spawnPickup, 700);
         return false;
       }
     }
@@ -453,6 +452,7 @@ function step() {
         }
       }
     }
+    p.px = p.x; p.py = p.y;
     p.x += p.vx; p.y += p.vy;
     p.life--;
     // hit enemy? (threshold scaled for the bigger enemy hitbox)
@@ -466,8 +466,10 @@ function step() {
     return p.life > 0;
   });
 
-  // 6. Pulses (shockwaves)
+  // 6. Pulses (shockwaves) — radius grows each tick; pr is the previous radius
+  //    so render can lerp the visible ring smoothly between ticks.
   game.pulses = game.pulses.filter(pu => {
+    pu.pr = pu.r;
     pu.r += pu.speed;
     pu.life--;
     for (const e of game.enemies) {
@@ -512,7 +514,7 @@ function step() {
   });
 
   // 9. Snake-enemy contact: apply damage (decay rule).
-  //    Threshold ~ enemy-radius (0.5) + body-radius (0.32) = 0.82, so damage
+  //    Threshold ~ enemy-radius (0.5) + body-half-side (0.29) = 0.79, so damage
   //    triggers at visual contact between the segment and the enemy.
   if (game.iframes <= 0) {
     let contacted = false;
@@ -522,7 +524,7 @@ function step() {
         let dx = e.x - seg.x, dy = e.y - seg.y;
         if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
         if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
-        if (Math.hypot(dx, dy) < 0.82) {
+        if (Math.hypot(dx, dy) < 0.79) {
           contacted = true;
           break outer;
         }
@@ -536,11 +538,12 @@ function step() {
   game.enemies = game.enemies.filter(e => e.hp > 0);
   const killed = before - game.enemies.length;
   game.kills += killed;
-  // Schedule respawns to converge toward target
+  // Schedule respawns to converge toward target. Pickup drop chance is low
+  // so the board doesn't fill with healing — they're a real reward, not litter.
   const deficit = game.targetEnemyCount - game.enemies.length;
   for (let i = 0; i < deficit; i++) {
     setTimeout(spawnEnemy, 800 + rand(1400));
-    if (Math.random() < 0.35) setTimeout(spawnPickup, 400 + rand(600));
+    if (Math.random() < 0.12) setTimeout(spawnPickup, 400 + rand(600));
   }
 
   // 11. Particles + flashes
@@ -564,9 +567,13 @@ function triggerAbility(i, abilityType) {
 
   if (abilityType === 'HEAD' || abilityType === 'FLAME') {
     // Fireballs: fast, big, and gently home in on the nearest enemy.
+    // Spawn with one tick of motion baked in so render-lerp smoothly carries
+    // it from segment position to its first-step position without a 1-tick stall.
+    const vx = ndir.x * 1.4, vy = ndir.y * 1.4;
     game.projectiles.push({
-      x: seg.x, y: seg.y,
-      vx: ndir.x * 1.4, vy: ndir.y * 1.4,
+      px: seg.x, py: seg.y,
+      x: seg.x + vx, y: seg.y + vy,
+      vx, vy,
       life: 35, color: '#ff6b35', homing: true
     });
   } else if (abilityType === 'MAGNET') {
@@ -581,13 +588,13 @@ function triggerAbility(i, abilityType) {
       }
     });
     game.pulses.push({
-      x: seg.x, y: seg.y, r: 0, maxR: 6,
+      x: seg.x, y: seg.y, r: 0, pr: 0, maxR: 6,
       speed: 0.6, life: 10,
       color: '#a64bff', damage: false, hit: new Set()
     });
   } else if (abilityType === 'SHIELD') {
     game.pulses.push({
-      x: seg.x, y: seg.y, r: 0, maxR: 3,
+      x: seg.x, y: seg.y, r: 0, pr: 0, maxR: 3,
       speed: 0.3, life: 18,
       color: '#4bd9ff', damage: true, hit: new Set()
     });
@@ -709,11 +716,12 @@ function render() {
 
   // pulses (shockwaves)
   game.pulses.forEach(pu => {
+    const r = pu.pr + (pu.r - pu.pr) * lerpT;
     ctx.strokeStyle = pu.color;
     ctx.lineWidth = pu.damage ? 3 : 2;
     ctx.globalAlpha = Math.max(0, pu.life / 18) * 0.9;
     ctx.beginPath();
-    ctx.arc((pu.x + 0.5) * TILE, (pu.y + 0.5) * TILE, pu.r * TILE, 0, Math.PI * 2);
+    ctx.arc((pu.x + 0.5) * TILE, (pu.y + 0.5) * TILE, r * TILE, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
   });
@@ -759,7 +767,7 @@ function render() {
     ctx.shadowColor = isHead ? headColor : def.color;
     ctx.shadowBlur = isHead ? 10 : (seg.type === 'BODY' ? 0 : 12);
     // Square blocks: fill most of the tile so adjacent segments visually connect.
-    const side = TILE * (isHead ? 0.75 : 0.65);
+    const side = TILE * (isHead ? 0.68 : 0.58);
     const half = side / 2;
     ctx.fillRect(sx - half, sy - half, side, side);
     ctx.shadowBlur = 0;
@@ -799,11 +807,13 @@ function render() {
 
   // projectiles
   game.projectiles.forEach(p => {
+    const rx = p.px + (p.x - p.px) * lerpT;
+    const ry = p.py + (p.y - p.py) * lerpT;
     ctx.fillStyle = p.color;
     ctx.shadowColor = p.color;
     ctx.shadowBlur = 16;
     ctx.beginPath();
-    ctx.arc((p.x + 0.5) * TILE, (p.y + 0.5) * TILE, 10, 0, Math.PI * 2);
+    ctx.arc((rx + 0.5) * TILE, (ry + 0.5) * TILE, 10, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
   });

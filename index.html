@@ -161,7 +161,7 @@
     <div class="stat"><span>Enemies</span><span id="stat-enemies">6</span></div>
 
     <h3>Segment types</h3>
-    <div class="seg-row"><div class="seg-dot" style="background:#88ddff;color:#88ddff"></div><span><b style="color:#88ddff">Head</b> · ice cone, SPACE to fire</span></div>
+    <div class="seg-row"><div class="seg-dot" style="background:#ff3060;color:#ff3060"></div><span><b style="color:#ff3060">Head</b> · laser beam, SPACE to fire</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#a64bff;color:#a64bff"></div><span><b style="color:#a64bff">Magnet</b> · pulls pickups</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#4bd9ff;color:#4bd9ff"></div><span><b style="color:#4bd9ff">Shield</b> · damaging shockwave</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#ffd84b;color:#ffd84b"></div><span><b style="color:#ffd84b">Echo</b> · repeats segment in front</span></div>
@@ -176,7 +176,7 @@
     <div class="ctrl-row"><span class="key">;</span> fewer enemies &nbsp; <span class="key">'</span> more enemies</div>
 
     <div class="hint">
-      Press <span class="key">SPACE</span> to fire an ice cone from the head — five shards spreading from slim at the head to wide across the screen. Add an <b style="color:#ffd84b">Echo</b> right behind the head and one tap of SPACE fires two cones from offset positions. Each enemy's white health ring loses a segment per hit; small swarm and zippies die in one shot, big bruisers take four.
+      Press <span class="key">SPACE</span> to fire a laser beam from the head — instant hit-scan, pierces every enemy in a 16-tile line. Add an <b style="color:#ffd84b">Echo</b> right behind the head and one tap of SPACE fires two beams from offset positions. Each enemy's white health ring loses a segment per hit; small swarm and zippies die in one shot, big bruisers take four.
     </div>
   </div>
 </div>
@@ -188,9 +188,9 @@ const COLS = 44, ROWS = 28, TILE = 24;
 
 // Segment definitions (positional triggers)
 const SEG = {
-  // The head is an ice-head for this demo: shoots a spreading ice cone on SPACE.
+  // The head is a laser-head for this demo: SPACE fires a hit-scan beam.
   // cooldown stays at 0 because firing is player-driven, not tick-driven.
-  HEAD:   { color: '#88ddff', label: '◉', cooldown: 0 },
+  HEAD:   { color: '#ff3060', label: '◉', cooldown: 0 },
   BODY:   { color: '#5a607a', label: '·',  cooldown: 0 },
   FLAME:  { color: '#ff6b35', label: 'F',  cooldown: 18 },
   MAGNET: { color: '#a64bff', label: 'M',  cooldown: 6 },
@@ -215,6 +215,7 @@ function reset() {
     particles: [],
     pulses: [], // shockwaves
     flashes: [], // segment trigger flashes
+    beams: [],   // laser beam visuals (hit-scan damage applied at fire time)
     tick: 0,
     kills: 0,
     tickMs: 120,
@@ -619,6 +620,7 @@ function step() {
     return pt.life > 0;
   });
   game.flashes = game.flashes.filter(f => { f.life--; return f.life > 0; });
+  game.beams = game.beams.filter(b => { b.life--; return b.life > 0; });
 }
 
 // === ABILITY TRIGGERS ===
@@ -631,24 +633,32 @@ function triggerAbility(i, abilityType) {
   const ndir = { ...game.headDir };
 
   if (abilityType === 'HEAD') {
-    // Ice cone: a fan of slim shards. The spread fixed at the head means the
-    // beam is narrow up close and widens as the shards diverge over distance.
-    const speed = 1.0;
-    const spreadRad = 35 * Math.PI / 180;
-    const count = 5;
-    const baseAngle = Math.atan2(ndir.y, ndir.x);
-    for (let i = 0; i < count; i++) {
-      const t = (count === 1) ? 0 : (i / (count - 1)) - 0.5; // -0.5..+0.5
-      const a = baseAngle + t * spreadRad;
-      const vx = Math.cos(a) * speed;
-      const vy = Math.sin(a) * speed;
-      game.projectiles.push({
-        px: seg.x, py: seg.y,
-        x: seg.x + vx, y: seg.y + vy,
-        vx, vy,
-        life: 22, color: '#a8e8ff', homing: false
-      });
+    // Laser: instant hit-scan along headDir. Damage every enemy in the
+    // beam's path; spawn a short-lived visual that fades over 8 ticks.
+    const beamLen = 16;
+    const beamWidth = 0.4;
+    const bx = ndir.x, by = ndir.y;
+    for (const e of game.enemies) {
+      let ex = e.x - seg.x, ey = e.y - seg.y;
+      if (Math.abs(ex) > COLS / 2) ex -= Math.sign(ex) * COLS;
+      if (Math.abs(ey) > ROWS / 2) ey -= Math.sign(ey) * ROWS;
+      const t = ex * bx + ey * by;
+      if (t < 0 || t > beamLen) continue;
+      const perpX = ex - t * bx;
+      const perpY = ey - t * by;
+      if (Math.hypot(perpX, perpY) < beamWidth / 2 + e.radius) {
+        e.hp--;
+        e.hitFlash = 6;
+        for (let k = 0; k < 8; k++) spawnParticle(e.x, e.y, '#ff80a0');
+      }
     }
+    game.beams.push({
+      x: seg.x, y: seg.y,
+      dirX: bx, dirY: by,
+      length: beamLen, width: beamWidth,
+      life: 8, maxLife: 8,
+      color: '#ff3060'
+    });
   } else if (abilityType === 'FLAME') {
     // (Kept as dead-but-defensive code: no path adds FLAME body segments today.)
     const vx = ndir.x * 1.4, vy = ndir.y * 1.4;
@@ -822,6 +832,28 @@ function render() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(isBody ? '+' : SEG[p.type].label, px, py);
+  });
+
+  // laser beams (hit-scan visuals; damage was applied at fire time)
+  game.beams.forEach(b => {
+    const alpha = Math.pow(b.life / b.maxLife, 1.2);
+    ctx.save();
+    ctx.translate((b.x + 0.5) * TILE, (b.y + 0.5) * TILE);
+    ctx.rotate(Math.atan2(b.dirY, b.dirX));
+    ctx.globalAlpha = alpha;
+    // colored outer beam with glow
+    ctx.fillStyle = b.color;
+    ctx.shadowColor = b.color;
+    ctx.shadowBlur = TILE * 0.7;
+    const w = b.width * TILE;
+    const len = b.length * TILE;
+    ctx.fillRect(0, -w / 2, len, w);
+    // bright inner core stripe
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, -w * 0.22, len, w * 0.44);
+    ctx.globalAlpha = 1;
+    ctx.restore();
   });
 
   // pulses (shockwaves)

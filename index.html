@@ -308,8 +308,15 @@ function advanceWave() {
     game.wave++;
     startWave();
   } else {
-    // Stage cleared — pause sim and offer a body-segment reward.
+    // Stage cleared — pause sim, offer a body-segment reward, and clear all
+    // ephemeral entities so the in-stage chaos doesn't bleed across the
+    // between-stages card or into the next stage's opening frame.
     game.choosingStage = true;
+    game.particles = [];
+    game.pulses = [];
+    game.beams = [];
+    game.flashes = [];
+    game.projectiles = [];
   }
 }
 function pickStageReward(type) {
@@ -884,6 +891,16 @@ function render() {
   const lerpT = Math.max(0, Math.min(1, (performance.now() - game.lastStep) / game.tickMs));
   const now = performance.now();
 
+  // Between-stages: clean dark backdrop + reward card. No world chrome, so
+  // frozen particles / pulses / the live scan sweep don't leak through.
+  if (game.choosingStage) {
+    ctx.fillStyle = '#04060c';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    renderChoiceCard(`STAGE ${game.stage} CLEARED — PICK A SEGMENT`, BODY_OPTS);
+    updatePanel();
+    return;
+  }
+
   // base fill (deep near-black)
   ctx.fillStyle = '#06070d';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1127,11 +1144,10 @@ function render() {
 
   if (game.choosingStart) {
     renderChoiceCard('PICK YOUR HEAD ABILITY', HEAD_OPTS);
-  } else if (game.choosingStage) {
-    renderChoiceCard(`STAGE ${game.stage} CLEARED — PICK A SEGMENT`, BODY_OPTS);
   } else if (game.choosing) {
     renderChoiceCard('PICK A SEGMENT', BODY_OPTS);
   }
+  // choosingStage takes the early-return path at the top of render().
 
   if (game.dead) {
     ctx.fillStyle = 'rgba(10,11,17,0.78)';

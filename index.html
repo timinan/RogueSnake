@@ -168,6 +168,7 @@
 
     <h3>Controls</h3>
     <div class="ctrl-row"><span class="key">WASD</span> / <span class="key">↑↓←→</span> steer</div>
+    <div class="ctrl-row"><span class="key">SPACE</span> fire fireball from the head</div>
     <div class="ctrl-row"><span class="key">1</span> add Magnet &nbsp; <span class="key">2</span> add Shield &nbsp; <span class="key">3</span> add Echo</div>
     <div class="ctrl-row"><span class="key">X</span> drop tail &nbsp; <span class="key">R</span> reset</div>
     <div class="ctrl-row"><span class="key">C</span> open choice card mid-game</div>
@@ -175,7 +176,7 @@
     <div class="ctrl-row"><span class="key">;</span> fewer enemies &nbsp; <span class="key">'</span> more enemies</div>
 
     <div class="hint">
-      The head is a flame — it fires homing fireballs forward. Add an <b style="color:#ffd84b">Echo</b> right behind it and you get two fireballs per shot. Stack more Echoes for more shots, or add a <b style="color:#a64bff">Magnet</b> to drag enemies into the spray.
+      Press <span class="key">SPACE</span> to fire a homing fireball from the head. Add an <b style="color:#ffd84b">Echo</b> right behind the head and one tap of SPACE fires two fireballs. Stack more Echoes for more shots, or add a <b style="color:#a64bff">Magnet</b> to drag enemies into the spray.
     </div>
   </div>
 </div>
@@ -187,8 +188,9 @@ const COLS = 25, ROWS = 18, TILE = 32;
 
 // Segment definitions (positional triggers)
 const SEG = {
-  // The head is a flame-head for this demo: shoots like a Flame segment.
-  HEAD:   { color: '#ff8855', label: '◉', cooldown: 18 },
+  // The head is a flame-head for this demo: shoots a fireball on SPACE.
+  // cooldown stays at 0 because firing is player-driven, not tick-driven.
+  HEAD:   { color: '#ff8855', label: '◉', cooldown: 0 },
   BODY:   { color: '#5a607a', label: '·',  cooldown: 0 },
   FLAME:  { color: '#ff6b35', label: 'F',  cooldown: 18 },
   MAGNET: { color: '#a64bff', label: 'M',  cooldown: 6 },
@@ -375,6 +377,12 @@ document.addEventListener('keydown', e => {
       game.choosing = !game.choosing; // toggle: press C again to cancel
     }
   }
+  else if (k === ' ') {
+    // SPACE fires from the head. Chains through any ECHOes immediately behind it.
+    if (!game.dead && !game.choosingStart && !game.choosing) {
+      triggerAbility(0, 'HEAD');
+    }
+  }
   else if (k === '[') game.tickMs = Math.min(400, game.tickMs + 20);
   else if (k === ']') game.tickMs = Math.max(60, game.tickMs - 20);
   else if (k === ';') game.targetEnemyCount = Math.max(0, game.targetEnemyCount - 1);
@@ -416,10 +424,11 @@ function step() {
     return true;
   });
 
-  // 4. Ability cooldowns + triggers
+  // 4. Ability cooldowns + triggers. HEAD is skipped here — the player fires
+  //    it manually with SPACE. BODY and ECHO don't fire on their own either.
   for (let i = 0; i < game.snake.length; i++) {
     const seg = game.snake[i];
-    if (seg.type === 'BODY' || seg.type === 'ECHO') continue;
+    if (seg.type === 'BODY' || seg.type === 'ECHO' || seg.type === 'HEAD') continue;
     seg.cd--;
     if (seg.cd <= 0) {
       triggerAbility(i, seg.type);

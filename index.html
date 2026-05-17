@@ -161,7 +161,7 @@
     <div class="stat"><span>Enemies</span><span id="stat-enemies">6</span></div>
 
     <h3>Segment types</h3>
-    <div class="seg-row"><div class="seg-dot" style="background:#ff8855;color:#ff8855"></div><span><b style="color:#ff8855">Head</b> · always a flame, fires forward</span></div>
+    <div class="seg-row"><div class="seg-dot" style="background:#88ddff;color:#88ddff"></div><span><b style="color:#88ddff">Head</b> · ice cone, SPACE to fire</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#a64bff;color:#a64bff"></div><span><b style="color:#a64bff">Magnet</b> · pulls pickups</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#4bd9ff;color:#4bd9ff"></div><span><b style="color:#4bd9ff">Shield</b> · damaging shockwave</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#ffd84b;color:#ffd84b"></div><span><b style="color:#ffd84b">Echo</b> · repeats segment in front</span></div>
@@ -176,7 +176,7 @@
     <div class="ctrl-row"><span class="key">;</span> fewer enemies &nbsp; <span class="key">'</span> more enemies</div>
 
     <div class="hint">
-      Press <span class="key">SPACE</span> to fire a homing fireball from the head. Add an <b style="color:#ffd84b">Echo</b> right behind the head and one tap of SPACE fires two fireballs. Stack more Echoes for more shots, or add a <b style="color:#a64bff">Magnet</b> to drag enemies into the spray.
+      Press <span class="key">SPACE</span> to fire an ice cone from the head — five shards spreading from slim at the head to wide across the screen. Add an <b style="color:#ffd84b">Echo</b> right behind the head and one tap of SPACE fires two cones from offset positions. Each enemy's white health ring loses a segment per hit; small swarm and zippies die in one shot, big bruisers take four.
     </div>
   </div>
 </div>
@@ -188,9 +188,9 @@ const COLS = 44, ROWS = 28, TILE = 24;
 
 // Segment definitions (positional triggers)
 const SEG = {
-  // The head is a flame-head for this demo: shoots a fireball on SPACE.
+  // The head is an ice-head for this demo: shoots a spreading ice cone on SPACE.
   // cooldown stays at 0 because firing is player-driven, not tick-driven.
-  HEAD:   { color: '#ff8855', label: '◉', cooldown: 0 },
+  HEAD:   { color: '#88ddff', label: '◉', cooldown: 0 },
   BODY:   { color: '#5a607a', label: '·',  cooldown: 0 },
   FLAME:  { color: '#ff6b35', label: 'F',  cooldown: 18 },
   MAGNET: { color: '#a64bff', label: 'M',  cooldown: 6 },
@@ -273,7 +273,7 @@ function spawnEnemy() {
   const t = emptyTile();
   const k = pickEnemyKind();
   game.enemies.push({
-    x: t.x, y: t.y, hp: k.hp, hitFlash: 0, px: t.x, py: t.y,
+    x: t.x, y: t.y, hp: k.hp, maxHp: k.hp, hitFlash: 0, px: t.x, py: t.y,
     radius: k.radius, speed: k.speed, color: k.color, shape: k.shape,
   });
 }
@@ -630,10 +630,27 @@ function triggerAbility(i, abilityType) {
   // matters for direction — every shot goes "forward."
   const ndir = { ...game.headDir };
 
-  if (abilityType === 'HEAD' || abilityType === 'FLAME') {
-    // Fireballs: fast, big, and gently home in on the nearest enemy.
-    // Spawn with one tick of motion baked in so render-lerp smoothly carries
-    // it from segment position to its first-step position without a 1-tick stall.
+  if (abilityType === 'HEAD') {
+    // Ice cone: a fan of slim shards. The spread fixed at the head means the
+    // beam is narrow up close and widens as the shards diverge over distance.
+    const speed = 1.0;
+    const spreadRad = 35 * Math.PI / 180;
+    const count = 5;
+    const baseAngle = Math.atan2(ndir.y, ndir.x);
+    for (let i = 0; i < count; i++) {
+      const t = (count === 1) ? 0 : (i / (count - 1)) - 0.5; // -0.5..+0.5
+      const a = baseAngle + t * spreadRad;
+      const vx = Math.cos(a) * speed;
+      const vy = Math.sin(a) * speed;
+      game.projectiles.push({
+        px: seg.x, py: seg.y,
+        x: seg.x + vx, y: seg.y + vy,
+        vx, vy,
+        life: 22, color: '#a8e8ff', homing: false
+      });
+    }
+  } else if (abilityType === 'FLAME') {
+    // (Kept as dead-but-defensive code: no path adds FLAME body segments today.)
     const vx = ndir.x * 1.4, vy = ndir.y * 1.4;
     game.projectiles.push({
       px: seg.x, py: seg.y,
@@ -831,10 +848,27 @@ function render() {
     shapePath(ex, ey, er, e.shape);
     ctx.fillStyle = e.hitFlash > 0 ? '#fff' : e.color;
     ctx.fill();
-    // white outline
+    // white outline (kept thin; the health ring is the chunky one)
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = Math.max(1, TILE * 0.06);
+    ctx.lineWidth = Math.max(1, TILE * 0.05);
     ctx.stroke();
+
+    // health ring: maxHp arcs around the enemy, one fades out per hit.
+    if (e.maxHp > 1) {
+      const ringR = er + Math.max(3, TILE * 0.18);
+      const gap = 0.18; // radians between segments
+      const segArc = (Math.PI * 2 - gap * e.maxHp) / e.maxHp;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(2, TILE * 0.09);
+      ctx.lineCap = 'round';
+      for (let i = 0; i < e.hp; i++) {
+        const start = -Math.PI / 2 + i * (segArc + gap) + gap / 2;
+        ctx.beginPath();
+        ctx.arc(ex, ey, ringR, start, start + segArc);
+        ctx.stroke();
+      }
+      ctx.lineCap = 'butt';
+    }
 
     // evil eyes — glowing red, positioned near the top of the shape
     if (e.hitFlash === 0) {

@@ -257,17 +257,19 @@ function emptyTile() {
   return { x: rand(COLS), y: rand(ROWS) };
 }
 
-// Six enemy kinds for variety. Different shapes, colors, sizes, and speeds.
-// Every enemy is larger than the projectile (radius 0.32) so projectiles never
-// look as big as the thing they're hitting.
+// Six enemy kinds. All in a warm/danger palette (reds, oranges, pinks) so they
+// read as enemies at a glance and don't share hues with the snake's body
+// segments (Magnet purple / Shield cyan / Echo yellow). Every enemy is larger
+// than the projectile (radius 0.32) so projectiles never look as big as their
+// targets.
 const ENEMY_KINDS = [
   // weight, radius, speed, hp, color, shape
-  { weight: 0.34, radius: 0.42, speed: 0.20, hp: 1, color: '#ff7088', shape: 'circle' },   // small swarm
-  { weight: 0.22, radius: 0.50, speed: 0.13, hp: 2, color: '#c84060', shape: 'circle' },   // medium grunt
-  { weight: 0.08, radius: 0.65, speed: 0.06, hp: 4, color: '#6b2848', shape: 'circle' },   // big bruiser
-  { weight: 0.14, radius: 0.46, speed: 0.17, hp: 1, color: '#4bd9ff', shape: 'diamond' },  // cyan scout
-  { weight: 0.13, radius: 0.58, speed: 0.09, hp: 3, color: '#a64bff', shape: 'hex' },      // purple tank
-  { weight: 0.09, radius: 0.42, speed: 0.24, hp: 1, color: '#ffd84b', shape: 'triangle' }, // yellow zippy
+  { weight: 0.34, radius: 0.42, speed: 0.20, hp: 1, color: '#ff4848', shape: 'circle' },   // bright red small swarm
+  { weight: 0.22, radius: 0.50, speed: 0.13, hp: 2, color: '#a82040', shape: 'circle' },   // deep red medium grunt
+  { weight: 0.08, radius: 0.65, speed: 0.06, hp: 4, color: '#5a1028', shape: 'circle' },   // dark crimson big bruiser
+  { weight: 0.14, radius: 0.46, speed: 0.17, hp: 1, color: '#ff40a0', shape: 'diamond' },  // hot magenta diamond scout
+  { weight: 0.13, radius: 0.58, speed: 0.09, hp: 3, color: '#e85020', shape: 'hex' },      // burnt orange hex tank
+  { weight: 0.09, radius: 0.42, speed: 0.24, hp: 1, color: '#ff7d50', shape: 'triangle' }, // coral triangle zippy
 ];
 
 function pickEnemyKind() {
@@ -962,14 +964,15 @@ function render() {
       ctx.lineCap = 'butt';
     }
 
-    // evil eyes — glowing red, positioned near the top of the shape
+    // Predator eyes — bright glowing yellow, contrast cleanly against the
+    // warm enemy palette and read as "watching you."
     if (e.hitFlash === 0) {
       const eyeOffX = er * 0.42;
       const eyeOffY = -er * 0.28;
       const eyeR = Math.max(1.5, er * 0.16);
-      ctx.fillStyle = '#ff2030';
-      ctx.shadowColor = '#ff4060';
-      ctx.shadowBlur = er * 0.5;
+      ctx.fillStyle = '#ffee40';
+      ctx.shadowColor = '#fff080';
+      ctx.shadowBlur = er * 0.55;
       ctx.beginPath(); ctx.arc(ex - eyeOffX, ey + eyeOffY, eyeR, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(ex + eyeOffX, ey + eyeOffY, eyeR, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
@@ -1003,6 +1006,11 @@ function render() {
     const half = side / 2;
     ctx.fillRect(sx - half, sy - half, side, side);
     ctx.shadowBlur = 0;
+    // White outline marks every segment as part of the snake — distinguishes
+    // it from same-colored enemies (e.g. coral zippies near a flame head).
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = isHead ? Math.max(2, TILE * 0.09) : Math.max(1.2, TILE * 0.06);
+    ctx.strokeRect(sx - half, sy - half, side, side);
 
     if (!isHead && seg.type !== 'BODY') {
       ctx.fillStyle = '#000';

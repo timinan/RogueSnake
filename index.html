@@ -248,16 +248,16 @@ function emptyTile() {
 }
 
 // Six enemy kinds for variety. Different shapes, colors, sizes, and speeds.
-// Circles read as "creatures" (with eyes). Diamonds/hexes/triangles read as
-// "abstract drones" (no eyes; inner core highlight instead).
+// Every enemy is larger than the projectile (radius 0.32) so projectiles never
+// look as big as the thing they're hitting.
 const ENEMY_KINDS = [
   // weight, radius, speed, hp, color, shape
-  { weight: 0.34, radius: 0.34, speed: 0.20, hp: 1, color: '#ff7088', shape: 'circle' },   // small swarm
-  { weight: 0.22, radius: 0.46, speed: 0.13, hp: 2, color: '#c84060', shape: 'circle' },   // medium grunt
-  { weight: 0.08, radius: 0.62, speed: 0.06, hp: 4, color: '#6b2848', shape: 'circle' },   // big bruiser
-  { weight: 0.14, radius: 0.40, speed: 0.17, hp: 1, color: '#4bd9ff', shape: 'diamond' },  // cyan scout
-  { weight: 0.13, radius: 0.55, speed: 0.09, hp: 3, color: '#a64bff', shape: 'hex' },      // purple tank
-  { weight: 0.09, radius: 0.36, speed: 0.24, hp: 1, color: '#ffd84b', shape: 'triangle' }, // yellow zippy
+  { weight: 0.34, radius: 0.42, speed: 0.20, hp: 1, color: '#ff7088', shape: 'circle' },   // small swarm
+  { weight: 0.22, radius: 0.50, speed: 0.13, hp: 2, color: '#c84060', shape: 'circle' },   // medium grunt
+  { weight: 0.08, radius: 0.65, speed: 0.06, hp: 4, color: '#6b2848', shape: 'circle' },   // big bruiser
+  { weight: 0.14, radius: 0.46, speed: 0.17, hp: 1, color: '#4bd9ff', shape: 'diamond' },  // cyan scout
+  { weight: 0.13, radius: 0.58, speed: 0.09, hp: 3, color: '#a64bff', shape: 'hex' },      // purple tank
+  { weight: 0.09, radius: 0.42, speed: 0.24, hp: 1, color: '#ffd84b', shape: 'triangle' }, // yellow zippy
 ];
 
 function pickEnemyKind() {
@@ -685,8 +685,9 @@ function wrapLerp(a, b, t, max) {
   return (a + d * t + max) % max;
 }
 
-// Draw an enemy's body shape centered at (cx, cy) with size r (radius in px).
-function drawShape(cx, cy, r, shape) {
+// Build an enemy's body shape path centered at (cx, cy) with size r. The caller
+// chooses fill / stroke / both — that's how we draw white outlines over the fill.
+function shapePath(cx, cy, r, shape) {
   ctx.beginPath();
   if (shape === 'diamond') {
     ctx.moveTo(cx, cy - r);
@@ -710,7 +711,6 @@ function drawShape(cx, cy, r, shape) {
   } else {
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
   }
-  ctx.fill();
 }
 
 function renderChoiceCard(title) {
@@ -819,29 +819,34 @@ function render() {
     ctx.globalAlpha = 1;
   });
 
-  // enemies
+  // enemies — filled body, white outline, glowing red "evil" eyes for every kind.
   game.enemies.forEach(e => {
     const rx = wrapLerp(e.px, e.x, lerpT, COLS);
     const ry = wrapLerp(e.py, e.y, lerpT, ROWS);
     const ex = (rx + 0.5) * TILE;
     const ey = (ry + 0.5) * TILE;
     const er = TILE * e.radius;
+
+    // fill
+    shapePath(ex, ey, er, e.shape);
     ctx.fillStyle = e.hitFlash > 0 ? '#fff' : e.color;
-    drawShape(ex, ey, er, e.shape);
+    ctx.fill();
+    // white outline
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1, TILE * 0.06);
+    ctx.stroke();
+
+    // evil eyes — glowing red, positioned near the top of the shape
     if (e.hitFlash === 0) {
-      if (e.shape === 'circle') {
-        // eyes for "creature" enemies; size tracks both enemy radius and TILE
-        const s = (e.radius / 0.5) * (TILE / 32);
-        ctx.fillStyle = '#000';
-        ctx.beginPath(); ctx.arc(ex - 5 * s, ey - 3 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(ex + 5 * s, ey - 3 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-      } else {
-        // abstract drone — inner highlight "core"
-        ctx.fillStyle = 'rgba(255,255,255,0.55)';
-        ctx.beginPath();
-        ctx.arc(ex, ey, er * 0.28, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      const eyeOffX = er * 0.42;
+      const eyeOffY = -er * 0.28;
+      const eyeR = Math.max(1.5, er * 0.16);
+      ctx.fillStyle = '#ff2030';
+      ctx.shadowColor = '#ff4060';
+      ctx.shadowBlur = er * 0.5;
+      ctx.beginPath(); ctx.arc(ex - eyeOffX, ey + eyeOffY, eyeR, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex + eyeOffX, ey + eyeOffY, eyeR, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
     }
   });
 

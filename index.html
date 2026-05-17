@@ -161,7 +161,7 @@
     <div class="stat"><span>Enemies</span><span id="stat-enemies">6</span></div>
 
     <h3>Segment types</h3>
-    <div class="seg-row"><div class="seg-dot" style="background:#ff3060;color:#ff3060"></div><span><b style="color:#ff3060">Head</b> · laser beam, SPACE to fire</span></div>
+    <div class="seg-row"><div class="seg-dot" style="background:#f0f0ff;color:#f0f0ff"></div><span><b>Head</b> · pick at start (LASER, ICE, or FLAME); SPACE to fire</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#a64bff;color:#a64bff"></div><span><b style="color:#a64bff">Magnet</b> · pulls pickups</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#4bd9ff;color:#4bd9ff"></div><span><b style="color:#4bd9ff">Shield</b> · damaging shockwave</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#ffd84b;color:#ffd84b"></div><span><b style="color:#ffd84b">Echo</b> · repeats segment in front</span></div>
@@ -176,7 +176,7 @@
     <div class="ctrl-row"><span class="key">;</span> fewer enemies &nbsp; <span class="key">'</span> more enemies</div>
 
     <div class="hint">
-      Press <span class="key">SPACE</span> to fire a laser beam from the head — instant hit-scan, pierces every enemy in a 16-tile line. Add an <b style="color:#ffd84b">Echo</b> right behind the head and one tap of SPACE fires two beams from offset positions. Each enemy's white health ring loses a segment per hit; small swarm and zippies die in one shot, big bruisers take four.
+      Each run starts by picking a head ability — <b style="color:#ff3060">LASER</b> hit-scan, <b style="color:#88ddff">ICE</b> spreading cone, or <b style="color:#ff8855">FLAME</b> homing fireball. Then the snake spawns with all three body specials (Magnet, Shield, Echo). <span class="key">SPACE</span> fires the head; ECHO segments behind it amplify the shot. Each enemy's white health ring loses a segment per hit.
     </div>
   </div>
 </div>
@@ -188,8 +188,8 @@ const COLS = 44, ROWS = 28, TILE = 24;
 
 // Segment definitions (positional triggers)
 const SEG = {
-  // The head is a laser-head for this demo: SPACE fires a hit-scan beam.
-  // cooldown stays at 0 because firing is player-driven, not tick-driven.
+  // The head's ability is picked at the start (laser / ice / flame). SEG.HEAD.color
+  // is mutated at pick time so the head and chain visualization tint to match.
   HEAD:   { color: '#ff3060', label: '◉', cooldown: 0 },
   BODY:   { color: '#5a607a', label: '·',  cooldown: 0 },
   FLAME:  { color: '#ff6b35', label: 'F',  cooldown: 18 },
@@ -198,15 +198,23 @@ const SEG = {
   ECHO:   { color: '#ffd84b', label: 'E',  cooldown: 0 },
 };
 
+// Head-ability color map. The starting choice card writes the picked entry into
+// SEG.HEAD.color so render() and updatePanel() pick it up automatically.
+const HEAD_COLORS = {
+  laser: '#ff3060',
+  ice:   '#88ddff',
+  flame: '#ff8855',
+};
+
 // === GAME STATE ===
 let game;
 function reset() {
   game = {
     snake: [
-      { x: 22, y: 14, type: 'HEAD', cd: 0, px: 22, py: 14 },
-      { x: 21, y: 14, type: 'BODY', cd: 0, px: 21, py: 14 },
-      { x: 20, y: 14, type: 'BODY', cd: 0, px: 20, py: 14 },
-      { x: 19, y: 14, type: 'BODY', cd: 0, px: 19, py: 14 },
+      { x: 22, y: 14, type: 'HEAD',   cd: 0, px: 22, py: 14 },
+      { x: 21, y: 14, type: 'MAGNET', cd: 0, px: 21, py: 14 },
+      { x: 20, y: 14, type: 'SHIELD', cd: 0, px: 20, py: 14 },
+      { x: 19, y: 14, type: 'ECHO',   cd: 0, px: 19, py: 14 },
     ],
     headDir: { x: 1, y: 0 },
     enemies: [],
@@ -227,6 +235,7 @@ function reset() {
     startTime: 0,    // NEW: performance.now() captured when game starts
     choosingStart: true,
     choosing: false,
+    headAbility: 'laser', // 'laser' | 'ice' | 'flame' — chosen at the starting card
     targetEnemyCount: 4, // NEW
   };
   // Enemies/pickups spawn after the starting choice is made.
@@ -300,8 +309,11 @@ function dropTail() {
   }
 }
 
-function pickStartingSegment(type) {
-  addSegment(type);
+function pickStartingHead(ability) {
+  game.headAbility = ability;
+  // Mutate SEG.HEAD.color so both canvas render and the side-panel chain pick up
+  // the new tint on the next frame.
+  SEG.HEAD.color = HEAD_COLORS[ability];
   game.choosingStart = false;
   game.startTime = performance.now();
   for (let i = 0; i < game.targetEnemyCount; i++) spawnEnemy();
@@ -402,15 +414,13 @@ document.addEventListener('keydown', e => {
   else if (k === 'arrowleft' || k === 'a') setDir(-1, 0);
   else if (k === 'arrowright' || k === 'd') setDir(1, 0);
   else if (k === '1' || k === '2' || k === '3') {
-    const map = { '1': 'MAGNET', '2': 'SHIELD', '3': 'ECHO' };
-    const chosen = map[k];
     if (game.choosingStart) {
-      pickStartingSegment(chosen);
-    } else if (game.choosing) {
-      addSegment(chosen);
-      game.choosing = false;
+      const headMap = { '1': 'laser', '2': 'ice', '3': 'flame' };
+      pickStartingHead(headMap[k]);
     } else {
-      addSegment(chosen); // existing force-add behavior preserved
+      const bodyMap = { '1': 'MAGNET', '2': 'SHIELD', '3': 'ECHO' };
+      addSegment(bodyMap[k]);
+      if (game.choosing) game.choosing = false;
     }
   }
   else if (k === 'x') dropTail();
@@ -633,34 +643,64 @@ function triggerAbility(i, abilityType) {
   const ndir = { ...game.headDir };
 
   if (abilityType === 'HEAD') {
-    // Laser: instant hit-scan along headDir. Damage every enemy in the
-    // beam's path; spawn a short-lived visual that fades over 8 ticks.
-    const beamLen = 16;
-    const beamWidth = 0.4;
-    const bx = ndir.x, by = ndir.y;
-    for (const e of game.enemies) {
-      let ex = e.x - seg.x, ey = e.y - seg.y;
-      if (Math.abs(ex) > COLS / 2) ex -= Math.sign(ex) * COLS;
-      if (Math.abs(ey) > ROWS / 2) ey -= Math.sign(ey) * ROWS;
-      const t = ex * bx + ey * by;
-      if (t < 0 || t > beamLen) continue;
-      const perpX = ex - t * bx;
-      const perpY = ey - t * by;
-      if (Math.hypot(perpX, perpY) < beamWidth / 2 + e.radius) {
-        e.hp--;
-        e.hitFlash = 6;
-        for (let k = 0; k < 8; k++) spawnParticle(e.x, e.y, '#ff80a0');
+    // Dispatch based on the head ability chosen at the starting card.
+    if (game.headAbility === 'laser') {
+      // Laser: instant hit-scan along headDir. Damage every enemy in the
+      // beam's path; spawn a short-lived visual that fades over 8 ticks.
+      const beamLen = 16;
+      const beamWidth = 0.4;
+      const bx = ndir.x, by = ndir.y;
+      for (const e of game.enemies) {
+        let ex = e.x - seg.x, ey = e.y - seg.y;
+        if (Math.abs(ex) > COLS / 2) ex -= Math.sign(ex) * COLS;
+        if (Math.abs(ey) > ROWS / 2) ey -= Math.sign(ey) * ROWS;
+        const t = ex * bx + ey * by;
+        if (t < 0 || t > beamLen) continue;
+        const perpX = ex - t * bx;
+        const perpY = ey - t * by;
+        if (Math.hypot(perpX, perpY) < beamWidth / 2 + e.radius) {
+          e.hp--;
+          e.hitFlash = 6;
+          for (let k = 0; k < 8; k++) spawnParticle(e.x, e.y, '#ff80a0');
+        }
       }
+      game.beams.push({
+        x: seg.x, y: seg.y,
+        dirX: bx, dirY: by,
+        length: beamLen, width: beamWidth,
+        life: 8, maxLife: 8,
+        color: '#ff3060'
+      });
+    } else if (game.headAbility === 'ice') {
+      // Ice cone: fan of 5 shards spreading slim-at-head to wide over distance.
+      const speed = 1.0;
+      const spreadRad = 35 * Math.PI / 180;
+      const count = 5;
+      const baseAngle = Math.atan2(ndir.y, ndir.x);
+      for (let k = 0; k < count; k++) {
+        const t = (count === 1) ? 0 : (k / (count - 1)) - 0.5;
+        const a = baseAngle + t * spreadRad;
+        const vx = Math.cos(a) * speed;
+        const vy = Math.sin(a) * speed;
+        game.projectiles.push({
+          px: seg.x, py: seg.y,
+          x: seg.x + vx, y: seg.y + vy,
+          vx, vy,
+          life: 22, color: '#a8e8ff', homing: false
+        });
+      }
+    } else if (game.headAbility === 'flame') {
+      // Flame: fast, big, homing fireball.
+      const vx = ndir.x * 1.4, vy = ndir.y * 1.4;
+      game.projectiles.push({
+        px: seg.x, py: seg.y,
+        x: seg.x + vx, y: seg.y + vy,
+        vx, vy,
+        life: 35, color: '#ff6b35', homing: true
+      });
     }
-    game.beams.push({
-      x: seg.x, y: seg.y,
-      dirX: bx, dirY: by,
-      length: beamLen, width: beamWidth,
-      life: 8, maxLife: 8,
-      color: '#ff3060'
-    });
   } else if (abilityType === 'FLAME') {
-    // (Kept as dead-but-defensive code: no path adds FLAME body segments today.)
+    // (Body-segment FLAME — kept defensively; no current code path adds it.)
     const vx = ndir.x * 1.4, vy = ndir.y * 1.4;
     game.projectiles.push({
       px: seg.x, py: seg.y,
@@ -740,7 +780,21 @@ function shapePath(cx, cy, r, shape) {
   }
 }
 
-function renderChoiceCard(title) {
+// Option lists for the choice cards. Each entry has its own color/label so the
+// starting card can show head-ability swatches and the on-demand card can show
+// body-segment swatches without sharing the SEG table.
+const HEAD_OPTS = [
+  { key: '1', color: '#ff3060', label: 'L', name: 'LASER', hint: 'piercing hit-scan beam (instant)' },
+  { key: '2', color: '#88ddff', label: 'I', name: 'ICE',   hint: '5-shard cone, slim to wide' },
+  { key: '3', color: '#ff8855', label: 'F', name: 'FLAME', hint: 'homing fireball' },
+];
+const BODY_OPTS = [
+  { key: '1', color: '#a64bff', label: 'M', name: 'MAGNET', hint: 'pulls pickups' },
+  { key: '2', color: '#4bd9ff', label: 'S', name: 'SHIELD', hint: 'damaging shockwave' },
+  { key: '3', color: '#ffd84b', label: 'E', name: 'ECHO',   hint: 'amplifies the segment in front' },
+];
+
+function renderChoiceCard(title, opts) {
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -750,24 +804,18 @@ function renderChoiceCard(title) {
   ctx.textBaseline = 'middle';
   ctx.fillText(title, canvas.width / 2, 90);
 
-  const opts = [
-    { key: '1', type: 'MAGNET', hint: 'pulls pickups' },
-    { key: '2', type: 'SHIELD', hint: 'damaging shockwave' },
-    { key: '3', type: 'ECHO',   hint: 'amplifies the segment in front (echo behind the head doubles your fire)' },
-  ];
   const cx = canvas.width / 2;
   const startY = 170;
   const rowH = 70;
 
   opts.forEach((o, idx) => {
     const y = startY + idx * rowH;
-    const def = SEG[o.type];
     // Card row background
     ctx.fillStyle = 'rgba(26,29,42,0.9)';
     ctx.fillRect(cx - 220, y - 25, 440, 50);
     // Color disc
-    ctx.fillStyle = def.color;
-    ctx.shadowColor = def.color;
+    ctx.fillStyle = o.color;
+    ctx.shadowColor = o.color;
     ctx.shadowBlur = 14;
     ctx.beginPath();
     ctx.arc(cx - 180, y, 14, 0, Math.PI * 2);
@@ -777,12 +825,12 @@ function renderChoiceCard(title) {
     ctx.font = 'bold 14px monospace';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
-    ctx.fillText(def.label, cx - 180, y);
+    ctx.fillText(o.label, cx - 180, y);
     // Key + name + hint
     ctx.fillStyle = '#d4d7e3';
     ctx.font = 'bold 16px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(`[${o.key}] ${o.type}`, cx - 150, y);
+    ctx.fillText(`[${o.key}] ${o.name}`, cx - 150, y);
     ctx.fillStyle = '#6a6f85';
     ctx.font = '13px monospace';
     ctx.fillText(o.hint, cx - 150, y + 18);
@@ -1030,9 +1078,9 @@ function render() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (game.choosingStart) {
-    renderChoiceCard('PICK YOUR STARTING SEGMENT');
+    renderChoiceCard('PICK YOUR HEAD ABILITY', HEAD_OPTS);
   } else if (game.choosing) {
-    renderChoiceCard('PICK A SEGMENT');
+    renderChoiceCard('PICK A SEGMENT', BODY_OPTS);
   }
 
   if (game.dead) {

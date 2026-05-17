@@ -145,7 +145,7 @@
 </head>
 <body>
 <div class="wrap">
-  <canvas id="game" width="960" height="640"></canvas>
+  <canvas id="game" width="1056" height="672"></canvas>
   <div class="panel">
     <h1>SNAKE ROGUELIKE</h1>
     <div class="subtitle">combo feel test · v0.1</div>
@@ -184,7 +184,7 @@
 'use strict';
 
 // === CONSTANTS ===
-const COLS = 30, ROWS = 20, TILE = 32;
+const COLS = 44, ROWS = 28, TILE = 24;
 
 // Segment definitions (positional triggers)
 const SEG = {
@@ -203,10 +203,10 @@ let game;
 function reset() {
   game = {
     snake: [
-      { x: 15, y: 10, type: 'HEAD', cd: 0, px: 15, py: 10 },
-      { x: 14, y: 10, type: 'BODY', cd: 0, px: 14, py: 10 },
-      { x: 13, y: 10, type: 'BODY', cd: 0, px: 13, py: 10 },
-      { x: 12, y: 10, type: 'BODY', cd: 0, px: 12, py: 10 },
+      { x: 22, y: 14, type: 'HEAD', cd: 0, px: 22, py: 14 },
+      { x: 21, y: 14, type: 'BODY', cd: 0, px: 21, py: 14 },
+      { x: 20, y: 14, type: 'BODY', cd: 0, px: 20, py: 14 },
+      { x: 19, y: 14, type: 'BODY', cd: 0, px: 19, py: 14 },
     ],
     headDir: { x: 1, y: 0 },
     enemies: [],
@@ -247,11 +247,17 @@ function emptyTile() {
   return { x: rand(COLS), y: rand(ROWS) };
 }
 
-// Three enemy kinds for variety. Small/fast/weak through Big/slow/tanky.
+// Six enemy kinds for variety. Different shapes, colors, sizes, and speeds.
+// Circles read as "creatures" (with eyes). Diamonds/hexes/triangles read as
+// "abstract drones" (no eyes; inner core highlight instead).
 const ENEMY_KINDS = [
-  { weight: 0.55, radius: 0.38, speed: 0.18, hp: 1, color: '#d9637a' }, // small
-  { weight: 0.32, radius: 0.50, speed: 0.13, hp: 2, color: '#a04068' }, // medium (was the only kind before)
-  { weight: 0.13, radius: 0.70, speed: 0.07, hp: 3, color: '#6b2848' }, // big
+  // weight, radius, speed, hp, color, shape
+  { weight: 0.34, radius: 0.34, speed: 0.20, hp: 1, color: '#ff7088', shape: 'circle' },   // small swarm
+  { weight: 0.22, radius: 0.46, speed: 0.13, hp: 2, color: '#c84060', shape: 'circle' },   // medium grunt
+  { weight: 0.08, radius: 0.62, speed: 0.06, hp: 4, color: '#6b2848', shape: 'circle' },   // big bruiser
+  { weight: 0.14, radius: 0.40, speed: 0.17, hp: 1, color: '#4bd9ff', shape: 'diamond' },  // cyan scout
+  { weight: 0.13, radius: 0.55, speed: 0.09, hp: 3, color: '#a64bff', shape: 'hex' },      // purple tank
+  { weight: 0.09, radius: 0.36, speed: 0.24, hp: 1, color: '#ffd84b', shape: 'triangle' }, // yellow zippy
 ];
 
 function pickEnemyKind() {
@@ -268,7 +274,7 @@ function spawnEnemy() {
   const k = pickEnemyKind();
   game.enemies.push({
     x: t.x, y: t.y, hp: k.hp, hitFlash: 0, px: t.x, py: t.y,
-    radius: k.radius, speed: k.speed, color: k.color,
+    radius: k.radius, speed: k.speed, color: k.color, shape: k.shape,
   });
 }
 function spawnPickup() {
@@ -310,6 +316,22 @@ function spawnParticle(x, y, color) {
     maxLife: 30,
     color
   });
+}
+
+// Radial burst for kill effects: particles fan out around (x,y) at varying speeds.
+function spawnBurst(x, y, color, count, speedScale = 1) {
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + Math.random() * 0.6;
+    const v = speedScale * (0.4 + Math.random() * 0.5);
+    game.particles.push({
+      x, y,
+      vx: Math.cos(angle) * v,
+      vy: Math.sin(angle) * v,
+      life: 28 + rand(18),
+      maxLife: 46,
+      color
+    });
+  }
 }
 
 function spawnFlash(seg) {
@@ -564,11 +586,23 @@ function step() {
     if (contacted) applyDamage();
   }
 
-  // 10. Clean dead enemies + respawn toward targetEnemyCount
-  const before = game.enemies.length;
+  // 10. Clean dead enemies + emit kill effects + respawn toward target.
+  const dying = game.enemies.filter(e => e.hp <= 0);
   game.enemies = game.enemies.filter(e => e.hp > 0);
-  const killed = before - game.enemies.length;
+  const killed = dying.length;
   game.kills += killed;
+  // Chunky death effects: radial burst in the enemy's color, accent sparks,
+  // expanding ring. Size scales with the enemy's radius so big kills feel big.
+  dying.forEach(e => {
+    const burst = 14 + Math.floor(e.radius * 50);
+    spawnBurst(e.x, e.y, e.color, burst, 0.7 + e.radius * 0.6);
+    spawnBurst(e.x, e.y, '#fff0c0', Math.max(5, Math.floor(e.radius * 14)), 1.4);
+    game.pulses.push({
+      x: e.x, y: e.y, r: 0, pr: 0, maxR: 1 + e.radius * 3,
+      speed: 0.4, life: 14,
+      color: e.color, damage: false, hit: new Set()
+    });
+  });
   // Schedule respawns to converge toward target. Pickup drop chance is low
   // so the board doesn't fill with healing — they're a real reward, not litter.
   const deficit = game.targetEnemyCount - game.enemies.length;
@@ -649,6 +683,34 @@ function wrapLerp(a, b, t, max) {
   if (d > max / 2) d -= max;
   else if (d < -max / 2) d += max;
   return (a + d * t + max) % max;
+}
+
+// Draw an enemy's body shape centered at (cx, cy) with size r (radius in px).
+function drawShape(cx, cy, r, shape) {
+  ctx.beginPath();
+  if (shape === 'diamond') {
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r, cy);
+    ctx.closePath();
+  } else if (shape === 'hex') {
+    for (let i = 0; i < 6; i++) {
+      const a = i * Math.PI / 3;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  } else if (shape === 'triangle') {
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r * 0.866, cy + r * 0.5);
+    ctx.lineTo(cx - r * 0.866, cy + r * 0.5);
+    ctx.closePath();
+  } else {
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  }
+  ctx.fill();
 }
 
 function renderChoiceCard(title) {
@@ -739,7 +801,7 @@ function render() {
     ctx.fill();
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#000';
-    ctx.font = 'bold 16px monospace';
+    ctx.font = `bold ${Math.round(TILE * 0.5)}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(isBody ? '+' : SEG[p.type].label, px, py);
@@ -763,16 +825,23 @@ function render() {
     const ry = wrapLerp(e.py, e.y, lerpT, ROWS);
     const ex = (rx + 0.5) * TILE;
     const ey = (ry + 0.5) * TILE;
+    const er = TILE * e.radius;
     ctx.fillStyle = e.hitFlash > 0 ? '#fff' : e.color;
-    ctx.beginPath();
-    ctx.arc(ex, ey, TILE * e.radius, 0, Math.PI * 2);
-    ctx.fill();
-    // eyes scale with enemy radius (reference: medium = 0.5)
+    drawShape(ex, ey, er, e.shape);
     if (e.hitFlash === 0) {
-      const s = e.radius / 0.5;
-      ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.arc(ex - 5 * s, ey - 3 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(ex + 5 * s, ey - 3 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
+      if (e.shape === 'circle') {
+        // eyes for "creature" enemies; size tracks both enemy radius and TILE
+        const s = (e.radius / 0.5) * (TILE / 32);
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.arc(ex - 5 * s, ey - 3 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(ex + 5 * s, ey - 3 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
+      } else {
+        // abstract drone — inner highlight "core"
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.beginPath();
+        ctx.arc(ex, ey, er * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   });
 
@@ -806,22 +875,24 @@ function render() {
 
     if (!isHead && seg.type !== 'BODY') {
       ctx.fillStyle = '#000';
-      ctx.font = 'bold 11px monospace';
+      ctx.font = `bold ${Math.round(TILE * 0.34)}px monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(def.label, sx, sy);
     }
 
-    // head eyes
+    // head eyes (scale with TILE so they stay proportional at any tile size)
     if (isHead) {
       const dir = game.headDir;
+      const eyeOff = TILE * 0.156;
+      const eyeR = TILE * 0.078;
       ctx.fillStyle = '#000';
-      const ox1 = dir.x * 5 - dir.y * 5;
-      const oy1 = dir.y * 5 + dir.x * 5;
-      const ox2 = dir.x * 5 + dir.y * 5;
-      const oy2 = dir.y * 5 - dir.x * 5;
-      ctx.beginPath(); ctx.arc(sx + ox1, sy + oy1, 2.5, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(sx + ox2, sy + oy2, 2.5, 0, Math.PI * 2); ctx.fill();
+      const ox1 = dir.x * eyeOff - dir.y * eyeOff;
+      const oy1 = dir.y * eyeOff + dir.x * eyeOff;
+      const ox2 = dir.x * eyeOff + dir.y * eyeOff;
+      const oy2 = dir.y * eyeOff - dir.x * eyeOff;
+      ctx.beginPath(); ctx.arc(sx + ox1, sy + oy1, eyeR, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx + ox2, sy + oy2, eyeR, 0, Math.PI * 2); ctx.fill();
     }
 
     // cooldown indicator for ability segments (ring around the square)
@@ -843,9 +914,9 @@ function render() {
     const ry = p.py + (p.y - p.py) * lerpT;
     ctx.fillStyle = p.color;
     ctx.shadowColor = p.color;
-    ctx.shadowBlur = 16;
+    ctx.shadowBlur = TILE * 0.55;
     ctx.beginPath();
-    ctx.arc((rx + 0.5) * TILE, (ry + 0.5) * TILE, 10, 0, Math.PI * 2);
+    ctx.arc((rx + 0.5) * TILE, (ry + 0.5) * TILE, TILE * 0.32, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
   });

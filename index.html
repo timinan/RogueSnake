@@ -792,12 +792,24 @@ function renderChoiceCard(title) {
 function render() {
   // Fraction-of-a-tick since the last step; lerp visible positions between px,py and x,y.
   const lerpT = Math.min(1, (performance.now() - game.lastStep) / game.tickMs);
+  const now = performance.now();
 
-  ctx.fillStyle = '#0a0b11';
+  // base fill (deep near-black)
+  ctx.fillStyle = '#06070d';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // subtle grid
-  ctx.strokeStyle = '#11131c';
+  // ambient scan-line sweep: a slow cyan band scrolls down the playfield
+  const sweepY = ((now / 22) % (canvas.height + 200)) - 100;
+  const sweepGrad = ctx.createLinearGradient(0, sweepY - 90, 0, sweepY + 90);
+  sweepGrad.addColorStop(0, 'rgba(80, 200, 255, 0)');
+  sweepGrad.addColorStop(0.5, 'rgba(80, 200, 255, 0.07)');
+  sweepGrad.addColorStop(1, 'rgba(80, 200, 255, 0)');
+  ctx.fillStyle = sweepGrad;
+  ctx.fillRect(0, sweepY - 90, canvas.width, 180);
+
+  // pulsing neon grid (replaces the old near-invisible #11131c grid)
+  const gridAlpha = 0.32 + Math.sin(now / 1200) * 0.08;
+  ctx.strokeStyle = `rgba(64, 110, 170, ${gridAlpha})`;
   ctx.lineWidth = 1;
   for (let x = 0; x <= COLS; x++) {
     ctx.beginPath();
@@ -999,6 +1011,23 @@ function render() {
     ctx.fillRect((pt.x + 0.5) * TILE - 2, (pt.y + 0.5) * TILE - 2, 4, 4);
     ctx.globalAlpha = 1;
   });
+
+  // CRT scanlines — fine horizontal dim bands over the whole canvas
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+  for (let y = 0; y < canvas.height; y += 3) {
+    ctx.fillRect(0, y, canvas.width, 1);
+  }
+
+  // vignette — radial darkening toward the corners for depth
+  const vcx = canvas.width / 2;
+  const vcy = canvas.height / 2;
+  const vmin = Math.min(vcx, vcy) * 0.55;
+  const vmax = Math.max(vcx, vcy) * 1.05;
+  const vignette = ctx.createRadialGradient(vcx, vcy, vmin, vcx, vcy, vmax);
+  vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (game.choosingStart) {
     renderChoiceCard('PICK YOUR STARTING SEGMENT');

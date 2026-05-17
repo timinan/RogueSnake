@@ -841,7 +841,10 @@ function renderChoiceCard(title, opts) {
 
 function render() {
   // Fraction-of-a-tick since the last step; lerp visible positions between px,py and x,y.
-  const lerpT = Math.min(1, (performance.now() - game.lastStep) / game.tickMs);
+  // Clamp to [0, 1] — performance.now() can read marginally before game.lastStep
+  // when setDir's early-tick path just fired step(), producing a tiny negative
+  // lerpT that would otherwise drive ctx.arc to negative radii on fresh pulses.
+  const lerpT = Math.max(0, Math.min(1, (performance.now() - game.lastStep) / game.tickMs));
   const now = performance.now();
 
   // base fill (deep near-black)

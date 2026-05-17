@@ -145,7 +145,7 @@
 </head>
 <body>
 <div class="wrap">
-  <canvas id="game" width="800" height="576"></canvas>
+  <canvas id="game" width="960" height="640"></canvas>
   <div class="panel">
     <h1>SNAKE ROGUELIKE</h1>
     <div class="subtitle">combo feel test · v0.1</div>
@@ -184,7 +184,7 @@
 'use strict';
 
 // === CONSTANTS ===
-const COLS = 25, ROWS = 18, TILE = 32;
+const COLS = 30, ROWS = 20, TILE = 32;
 
 // Segment definitions (positional triggers)
 const SEG = {
@@ -203,10 +203,10 @@ let game;
 function reset() {
   game = {
     snake: [
-      { x: 12, y: 9, type: 'HEAD', cd: 0, px: 12, py: 9 },
-      { x: 11, y: 9, type: 'BODY', cd: 0, px: 11, py: 9 },
-      { x: 10, y: 9, type: 'BODY', cd: 0, px: 10, py: 9 },
-      { x: 9,  y: 9, type: 'BODY', cd: 0, px: 9,  py: 9 },
+      { x: 15, y: 10, type: 'HEAD', cd: 0, px: 15, py: 10 },
+      { x: 14, y: 10, type: 'BODY', cd: 0, px: 14, py: 10 },
+      { x: 13, y: 10, type: 'BODY', cd: 0, px: 13, py: 10 },
+      { x: 12, y: 10, type: 'BODY', cd: 0, px: 12, py: 10 },
     ],
     headDir: { x: 1, y: 0 },
     enemies: [],
@@ -247,9 +247,29 @@ function emptyTile() {
   return { x: rand(COLS), y: rand(ROWS) };
 }
 
+// Three enemy kinds for variety. Small/fast/weak through Big/slow/tanky.
+const ENEMY_KINDS = [
+  { weight: 0.55, radius: 0.38, speed: 0.18, hp: 1, color: '#d9637a' }, // small
+  { weight: 0.32, radius: 0.50, speed: 0.13, hp: 2, color: '#a04068' }, // medium (was the only kind before)
+  { weight: 0.13, radius: 0.70, speed: 0.07, hp: 3, color: '#6b2848' }, // big
+];
+
+function pickEnemyKind() {
+  let r = Math.random();
+  for (const k of ENEMY_KINDS) {
+    if (r < k.weight) return k;
+    r -= k.weight;
+  }
+  return ENEMY_KINDS[ENEMY_KINDS.length - 1];
+}
+
 function spawnEnemy() {
   const t = emptyTile();
-  game.enemies.push({ x: t.x, y: t.y, hp: 1, hitFlash: 0, px: t.x, py: t.y });
+  const k = pickEnemyKind();
+  game.enemies.push({
+    x: t.x, y: t.y, hp: k.hp, hitFlash: 0, px: t.x, py: t.y,
+    radius: k.radius, speed: k.speed, color: k.color,
+  });
 }
 function spawnPickup() {
   const t = emptyTile();
@@ -464,9 +484,9 @@ function step() {
     p.px = p.x; p.py = p.y;
     p.x += p.vx; p.y += p.vy;
     p.life--;
-    // hit enemy? (threshold scaled for the bigger enemy hitbox)
+    // hit enemy? (threshold scales with this enemy's radius + projectile radius ~0.3)
     for (const e of game.enemies) {
-      if (Math.hypot(e.x - p.x, e.y - p.y) < 0.7) {
+      if (Math.hypot(e.x - p.x, e.y - p.y) < e.radius + 0.3) {
         e.hp--; e.hitFlash = 6;
         for (let i = 0; i < 10; i++) spawnParticle(e.x, e.y, '#ffaa66');
         return false;
@@ -507,7 +527,8 @@ function step() {
     p.bob += 0.18;
   });
 
-  // 8. Enemies — move toward head every tick (small step + render lerp = smooth glide).
+  // 8. Enemies — move toward head every tick. Per-enemy speed (set at spawn)
+  //    gives the small ones a chase-y feel and the big ones a lumbering one.
   game.enemies.forEach(e => {
     e.hitFlash = Math.max(0, e.hitFlash - 1);
     e.px = e.x; e.py = e.y;
@@ -517,23 +538,24 @@ function step() {
     if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
     const dist = Math.hypot(dx, dy);
     if (dist > 0.1) {
-      e.x = (e.x + dx / dist * 0.13 + COLS) % COLS;
-      e.y = (e.y + dy / dist * 0.13 + ROWS) % ROWS;
+      e.x = (e.x + dx / dist * e.speed + COLS) % COLS;
+      e.y = (e.y + dy / dist * e.speed + ROWS) % ROWS;
     }
   });
 
   // 9. Snake-enemy contact: apply damage (decay rule).
-  //    Threshold ~ enemy-radius (0.5) + body-half-side (0.29) = 0.79, so damage
-  //    triggers at visual contact between the segment and the enemy.
+  //    Per-enemy threshold = enemy radius + body half-side (~0.29), so damage
+  //    fires at visual contact regardless of the enemy's size category.
   if (game.iframes <= 0) {
     let contacted = false;
     outer:
     for (const e of game.enemies) {
+      const reach = e.radius + 0.29;
       for (const seg of game.snake) {
         let dx = e.x - seg.x, dy = e.y - seg.y;
         if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
         if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
-        if (Math.hypot(dx, dy) < 0.79) {
+        if (Math.hypot(dx, dy) < reach) {
           contacted = true;
           break outer;
         }
@@ -741,15 +763,16 @@ function render() {
     const ry = wrapLerp(e.py, e.y, lerpT, ROWS);
     const ex = (rx + 0.5) * TILE;
     const ey = (ry + 0.5) * TILE;
-    ctx.fillStyle = e.hitFlash > 0 ? '#fff' : '#a04068';
+    ctx.fillStyle = e.hitFlash > 0 ? '#fff' : e.color;
     ctx.beginPath();
-    ctx.arc(ex, ey, TILE * 0.5, 0, Math.PI * 2);
+    ctx.arc(ex, ey, TILE * e.radius, 0, Math.PI * 2);
     ctx.fill();
-    // eyes
+    // eyes scale with enemy radius (reference: medium = 0.5)
     if (e.hitFlash === 0) {
+      const s = e.radius / 0.5;
       ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.arc(ex - 5, ey - 3, 2.5, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(ex + 5, ey - 3, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex - 5 * s, ey - 3 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex + 5 * s, ey - 3 * s, 2.5 * s, 0, Math.PI * 2); ctx.fill();
     }
   });
 

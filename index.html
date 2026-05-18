@@ -145,7 +145,7 @@
 </head>
 <body>
 <div class="wrap">
-  <canvas id="game" width="1056" height="672"></canvas>
+  <canvas id="game" width="1044" height="648"></canvas>
   <div class="panel">
     <h1>SNAKE ROGUELIKE</h1>
     <div class="subtitle">combo feel test · v0.1</div>
@@ -176,7 +176,7 @@
     <div class="ctrl-row"><span class="key">[</span> slower &nbsp; <span class="key">]</span> faster</div>
 
     <div class="hint">
-      Pick a head ability at the start — <b style="color:#ff3060">LASER</b>, <b style="color:#88ddff">ICE</b>, or <b style="color:#ff8855">FLAME</b>. The snake starts with the head only — one hit and you die, so dodge. Each stage is waves of enemies; clear them all and you earn a body special (Magnet, Shield, or Echo). New stages unlock new enemy kinds and ramp the wave size. Build your snake by surviving.
+      Pick a head ability at the start — <b style="color:#ff3060">LASER</b>, <b style="color:#88ddff">ICE</b>, or <b style="color:#ff8855">FLAME</b>. The snake starts with the head only — one hit and you die, so dodge. Each stage is waves of enemies; clear them all and you earn a body special. New stages unlock new enemy kinds, ramp wave size, and zoom the camera out — by stage 7+ much bigger, tougher heavies appear.
     </div>
   </div>
 </div>
@@ -184,7 +184,34 @@
 'use strict';
 
 // === CONSTANTS ===
-const COLS = 44, ROWS = 28, TILE = 24;
+// Per-stage zoom: TILE shrinks and the arena grows as stages advance, so the
+// world feels like it's zooming out around the same-sized canvas. Values write
+// to these let-bindings via setStageDimensions(stage).
+let COLS = 29, ROWS = 18, TILE = 36;
+
+const STAGE_TIERS = [
+  // Stage 1 = most zoomed-in (small arena, big entities).
+  { TILE: 36, COLS: 29, ROWS: 18 },  // Stage 1
+  { TILE: 30, COLS: 35, ROWS: 22 },  // Stage 2
+  { TILE: 24, COLS: 44, ROWS: 28 },  // Stage 3
+  { TILE: 20, COLS: 52, ROWS: 33 },  // Stage 4
+  { TILE: 18, COLS: 58, ROWS: 37 },  // Stage 5
+  { TILE: 16, COLS: 66, ROWS: 42 },  // Stage 6+ (most zoomed-out)
+];
+
+// Writes the let-bound TILE / COLS / ROWS for the given stage and resizes the
+// canvas to fit. Safe to call any time canvas is defined (i.e., after the
+// canvas const at the bottom of the script is initialized).
+function setStageDimensions(stage) {
+  const idx = Math.min(stage, STAGE_TIERS.length) - 1;
+  const tier = STAGE_TIERS[idx];
+  TILE = tier.TILE;
+  COLS = tier.COLS;
+  ROWS = tier.ROWS;
+  const c = document.getElementById('game');
+  c.width = COLS * TILE;
+  c.height = ROWS * TILE;
+}
 
 // Segment definitions (positional triggers)
 const SEG = {
@@ -209,9 +236,13 @@ const HEAD_COLORS = {
 // === GAME STATE ===
 let game;
 function reset() {
+  // Set stage-1 dimensions first so we can center the snake in the new arena.
+  setStageDimensions(1);
+  const cx = Math.floor(COLS / 2);
+  const cy = Math.floor(ROWS / 2);
   game = {
     snake: [
-      { x: 22, y: 14, type: 'HEAD', cd: 0, px: 22, py: 14 },
+      { x: cx, y: cy, type: 'HEAD', cd: 0, px: cx, py: cy },
     ],
     headDir: { x: 1, y: 0 },
     enemies: [],
@@ -269,6 +300,10 @@ const ENEMY_KINDS = [
   { weight: 0.10, unlock: 4, radius: 0.42, speed: 0.24, hp: 1, color: '#ff7d50', shape: 'triangle' }, // coral triangle zippy
   { weight: 0.10, unlock: 5, radius: 0.58, speed: 0.09, hp: 3, color: '#e85020', shape: 'hex' },      // burnt orange hex tank
   { weight: 0.06, unlock: 6, radius: 0.65, speed: 0.06, hp: 4, color: '#5a1028', shape: 'circle' },   // dark crimson big bruiser
+  // Late-game heavies — bigger and tougher than the base roster.
+  { weight: 0.05, unlock: 7, radius: 0.85, speed: 0.05, hp: 6, color: '#3a0820', shape: 'circle' },   // mega bruiser
+  { weight: 0.06, unlock: 8, radius: 0.55, speed: 0.20, hp: 3, color: '#ff20d0', shape: 'diamond' },  // heavy scout (fast diamond)
+  { weight: 0.04, unlock: 9, radius: 1.05, speed: 0.03, hp: 8, color: '#200408', shape: 'hex' },      // colossus
 ];
 
 function pickEnemyKind(stage) {
@@ -324,6 +359,9 @@ function pickStageReward(type) {
   game.choosingStage = false;
   game.stage++;
   game.wave = 1;
+  // Zoom out: bigger arena and smaller TILE for the new stage. Snake keeps its
+  // current position (still valid because each tier only grows COLS/ROWS).
+  setStageDimensions(game.stage);
   startWave();
 }
 function spawnPickup() {

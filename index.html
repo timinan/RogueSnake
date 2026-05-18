@@ -326,14 +326,19 @@ function spawnEnemy() {
   });
 }
 
-// Stage / wave shape. Stages unlock new enemy kinds and ramp count.
+// Stage / wave shape. Stages 1–2 are warm-up; from stage 3 the wave count
+// and per-wave enemy count both ramp hard.
 function waveSize(stage, wave) {
-  return 2 + stage + wave * Math.max(1, Math.floor(stage / 2));
+  if (stage <= 2) return 3 + stage + wave;
+  return 5 + stage + wave * (stage - 1);
 }
 function wavesPerStage(stage) {
-  return Math.min(4, 1 + Math.floor(stage / 2));
+  if (stage <= 2) return stage;
+  return Math.min(5, 2 + Math.floor(stage / 2));
 }
-const MAX_ACTIVE_ENEMIES = 6;
+function maxActiveEnemies(stage) {
+  return Math.min(12, 5 + stage);
+}
 
 function startWave() {
   game.waveQueue = waveSize(game.stage, game.wave);
@@ -696,8 +701,8 @@ function step() {
   for (let i = 0; i < killed; i++) {
     if (Math.random() < 0.12) setTimeout(spawnPickup, 400 + rand(600));
   }
-  // Spawn from this wave's queue if there's room on the board.
-  if (game.waveQueue > 0 && game.enemies.length < MAX_ACTIVE_ENEMIES) {
+  // Spawn from this wave's queue if there's room on the board (cap grows with stage).
+  if (game.waveQueue > 0 && game.enemies.length < maxActiveEnemies(game.stage)) {
     spawnEnemy();
     game.waveQueue--;
   }
@@ -834,6 +839,68 @@ function wrapLerp(a, b, t, max) {
   if (d > max / 2) d -= max;
   else if (d < -max / 2) d += max;
   return (a + d * t + max) % max;
+}
+
+// Per-shape "monster decorations" drawn behind the body so they read as parts
+// of the creature: circles get feet, diamonds get wings, hexes get spikes,
+// triangles get a tail. Color passed in so hit-flash whitens them too.
+function drawDecorations(ex, ey, er, shape, color) {
+  ctx.fillStyle = color;
+  if (shape === 'circle') {
+    // Two tiny feet just under the body
+    const footY = ey + er * 0.6;
+    const footW = er * 0.18;
+    const footH = er * 0.5;
+    [-0.45, 0.45].forEach(off => {
+      const fx = ex + er * off;
+      ctx.beginPath();
+      ctx.moveTo(fx - footW, footY);
+      ctx.lineTo(fx + footW, footY);
+      ctx.lineTo(fx, footY + footH);
+      ctx.closePath();
+      ctx.fill();
+    });
+  } else if (shape === 'diamond') {
+    // Wings extending upper-left and upper-right
+    const wingW = er * 0.7;
+    const wingH = er * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(ex - er * 0.7, ey - er * 0.1);
+    ctx.lineTo(ex - er * 0.7 - wingW, ey - er * 0.1 - wingH);
+    ctx.lineTo(ex - er * 0.7, ey - er * 0.1 + wingH * 0.35);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(ex + er * 0.7, ey - er * 0.1);
+    ctx.lineTo(ex + er * 0.7 + wingW, ey - er * 0.1 - wingH);
+    ctx.lineTo(ex + er * 0.7, ey - er * 0.1 + wingH * 0.35);
+    ctx.closePath();
+    ctx.fill();
+  } else if (shape === 'hex') {
+    // Three spikes on top
+    const sw = er * 0.13;
+    const sh = er * 0.5;
+    [-0.5, 0, 0.5].forEach(off => {
+      const sx = ex + er * off;
+      const sy = ey - er * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(sx - sw, sy);
+      ctx.lineTo(sx + sw, sy);
+      ctx.lineTo(sx, sy - sh);
+      ctx.closePath();
+      ctx.fill();
+    });
+  } else if (shape === 'triangle') {
+    // Tail trailing below the body
+    const tx = ex;
+    const ty = ey + er * 0.55;
+    ctx.beginPath();
+    ctx.moveTo(tx - er * 0.15, ty);
+    ctx.lineTo(tx + er * 0.15, ty);
+    ctx.lineTo(tx, ty + er * 0.75);
+    ctx.closePath();
+    ctx.fill();
+  }
 }
 
 // Build an enemy's body shape path centered at (cx, cy) with size r. The caller
@@ -1032,10 +1099,14 @@ function render() {
     const ex = (rx + 0.5) * TILE;
     const ey = (ry + 0.5) * TILE;
     const er = TILE * e.radius;
+    const bodyColor = e.hitFlash > 0 ? '#fff' : e.color;
+
+    // monster decorations behind the body (feet / wings / spikes / tail)
+    drawDecorations(ex, ey, er, e.shape, bodyColor);
 
     // fill
     shapePath(ex, ey, er, e.shape);
-    ctx.fillStyle = e.hitFlash > 0 ? '#fff' : e.color;
+    ctx.fillStyle = bodyColor;
     ctx.fill();
     // white outline (kept thin; the health ring is the chunky one)
     ctx.strokeStyle = '#ffffff';

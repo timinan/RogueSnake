@@ -183,7 +183,12 @@
     <div class="ctrl-row"><span class="key">[</span> slower &nbsp; <span class="key">]</span> faster</div>
 
     <div class="hint">
-      Pick a head — <b style="color:#ff3060">LASER</b>, <b style="color:#88ddff">ICE</b>, or <b style="color:#ff8855">FLAME</b>. Start with 2 BODY armor; every hit hurts. <span class="key">SHIFT</span> dashes through danger. Stages unlock new threats: dashers telegraph + lunge, shooters fire back at you, splitters split on death, bombers explode, healers heal. Clear each stage to earn a body special.
+      Pick a head — <b style="color:#ff3060">LASER</b>, <b style="color:#88ddff">ICE</b>, or <b style="color:#ff8855">FLAME</b>. <span class="key">SHIFT</span> dashes through danger. Each body segment also acts as a <b>modifier</b> for the segment in front of it:
+      <br><b style="color:#a64bff">M</b> behind a shot = aim at the nearest enemy.
+      <br><b style="color:#4bd9ff">S</b> behind any fire = bonus shockwave at the source.
+      <br><b style="color:#ffd84b">E</b> behind any fire = re-fire from the echo's position.
+      <br><b style="color:#80e0f0">»</b> behind <b>M</b>/<b>S</b> = cooldown 40% faster.
+      <br>Order matters: <i>[HEAD][M][E]</i> ≠ <i>[HEAD][E][M]</i>.
     </div>
   </div>
 </div>
@@ -622,10 +627,14 @@ function step() {
 
   // 4. Ability cooldowns + triggers. HEAD is skipped here — the player fires
   //    it manually with SPACE. BODY, ECHO, and SPEED don't fire on their own.
+  //    SPEED behind a firing segment is a *modifier* — its cooldown decrements
+  //    40% faster, so [MAGNET][SPEED] pulses on ~4 ticks instead of 6.
   for (let i = 0; i < game.snake.length; i++) {
     const seg = game.snake[i];
     if (seg.type === 'BODY' || seg.type === 'ECHO' || seg.type === 'HEAD' || seg.type === 'SPEED') continue;
-    seg.cd--;
+    const behind = game.snake[i + 1];
+    const cdRate = (behind && behind.type === 'SPEED') ? 1.4 : 1;
+    seg.cd -= cdRate;
     if (seg.cd <= 0) {
       triggerAbility(i, seg.type);
       seg.cd = SEG[seg.type].cooldown;
@@ -927,9 +936,37 @@ function triggerAbility(i, abilityType) {
   const seg = game.snake[i];
   spawnFlash({ x: seg.x, y: seg.y, type: abilityType });
 
-  // Abilities fire in the snake's current heading. Chain position no longer
-  // matters for direction — every shot goes "forward."
-  const ndir = { ...game.headDir };
+  // === SEGMENT-BEHIND MODIFIERS ===
+  // Each body type becomes a "modifier" when placed at i+1 of a firing segment:
+  //   MAGNET behind X  -> X's projectiles track toward the nearest enemy.
+  //   SHIELD behind X  -> X spawns an extra damaging shockwave at its position.
+  //   ECHO   behind X  -> X re-fires from echo's position (handled at bottom).
+  //   SPEED  behind X  -> X's cooldown decrements faster (handled in phase 4).
+  // Modifiers compose along the chain because every firing segment checks ITS
+  // own neighbor, so [HEAD][MAGNET][ECHO] differs from [HEAD][ECHO][MAGNET].
+  const behind = game.snake[i + 1];
+  const modType = behind ? behind.type : null;
+  const modTrack = modType === 'MAGNET';
+  const modBurst = modType === 'SHIELD';
+
+  // Default: fire in the snake's current heading. If MAGNET is behind, aim
+  // at the nearest enemy (within sight) instead — this is how "homing" reads
+  // for hit-scan/cone weapons that can't curve mid-flight.
+  let ndir = { ...game.headDir };
+  if (modTrack && game.enemies.length > 0) {
+    let bestD = Infinity, bestDx = 0, bestDy = 0;
+    for (const e of game.enemies) {
+      let dx = e.x - seg.x, dy = e.y - seg.y;
+      if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
+      if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
+      const d = Math.hypot(dx, dy);
+      if (d < bestD) { bestD = d; bestDx = dx; bestDy = dy; }
+    }
+    if (bestD < 14) {
+      const len = bestD || 1;
+      ndir = { x: bestDx / len, y: bestDy / len };
+    }
+  }
 
   if (abilityType === 'HEAD') {
     // Dispatch based on the head ability chosen at the starting card.
@@ -962,6 +999,7 @@ function triggerAbility(i, abilityType) {
       });
     } else if (game.headAbility === 'ice') {
       // Ice cone: fan of 5 shards spreading slim-at-head to wide over distance.
+      // MAGNET behind makes each shard track toward enemies after spawn.
       const speed = 1.0;
       const spreadRad = 35 * Math.PI / 180;
       const count = 5;
@@ -975,7 +1013,7 @@ function triggerAbility(i, abilityType) {
           px: seg.x, py: seg.y,
           x: seg.x + vx, y: seg.y + vy,
           vx, vy,
-          life: 22, color: '#a8e8ff', homing: false
+          life: 22, color: '#a8e8ff', homing: modTrack
         });
       }
     } else if (game.headAbility === 'flame') {
@@ -1021,10 +1059,21 @@ function triggerAbility(i, abilityType) {
     });
   }
 
+  // SHIELD modifier: an extra damaging shockwave at the firing position.
+  // Stacks with the segment's own effect (so a SHIELD segment with another
+  // SHIELD behind it fires two overlapping shockwaves — a bigger blast).
+  if (modBurst) {
+    game.pulses.push({
+      x: seg.x, y: seg.y, r: 0, pr: 0, maxR: 2.5,
+      speed: 0.4, life: 14,
+      color: '#4bd9ff', damage: true, hit: new Set()
+    });
+  }
+
   // === ECHO CHAIN ===
   // If the segment immediately BEHIND this is ECHO, fire the same ability from there.
   // [Head][Echo] = 2 fireballs; [Head][Echo][Echo] = 3 fireballs; etc.
-  if (i + 1 < game.snake.length && game.snake[i + 1].type === 'ECHO') {
+  if (behind && behind.type === 'ECHO') {
     triggerAbility(i + 1, abilityType);
   }
 }

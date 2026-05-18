@@ -176,13 +176,14 @@
     <h3>Controls</h3>
     <div class="ctrl-row"><span class="key">WASD</span> / <span class="key">↑↓←→</span> steer</div>
     <div class="ctrl-row"><span class="key">SPACE</span> fire fireball from the head</div>
+    <div class="ctrl-row"><span class="key">SHIFT</span> dash — brief i-frames (cooldown ~2s)</div>
     <div class="ctrl-row"><span class="key">1</span> Magnet &nbsp; <span class="key">2</span> Shield &nbsp; <span class="key">3</span> Echo &nbsp; <span class="key">4</span> Speed</div>
     <div class="ctrl-row"><span class="key">X</span> drop tail &nbsp; <span class="key">R</span> reset</div>
     <div class="ctrl-row"><span class="key">C</span> open choice card mid-game</div>
     <div class="ctrl-row"><span class="key">[</span> slower &nbsp; <span class="key">]</span> faster</div>
 
     <div class="hint">
-      Pick a head ability at the start — <b style="color:#ff3060">LASER</b>, <b style="color:#88ddff">ICE</b>, or <b style="color:#ff8855">FLAME</b>. The snake starts as head + 3 BODY (3 hits of armor). Each stage is waves of enemies; clear them all and you earn a body special. New stages unlock new enemy kinds, ramp wave size, and zoom the camera out — by stage 7+ much bigger, tougher heavies appear.
+      Pick a head — <b style="color:#ff3060">LASER</b>, <b style="color:#88ddff">ICE</b>, or <b style="color:#ff8855">FLAME</b>. Start with 2 BODY armor; every hit hurts. <span class="key">SHIFT</span> dashes through danger. Stages unlock new threats: dashers telegraph + lunge, shooters fire back at you, splitters split on death, bombers explode, healers heal. Clear each stage to earn a body special.
     </div>
   </div>
 </div>
@@ -197,14 +198,17 @@
 let COLS = 22, ROWS = 14, TILE = 12;
 const PIXEL_SCALE = 4;
 
+// Capped zoom: TILE never drops below 8 so entity radii stay >= ~4 art-pixels
+// (any smaller and ctx.arc / fillRect produce anti-aliased smears that upscale
+// to fuzz at the display layer). Late-stage difficulty ramps through enemy
+// count + behavior, not infinite arena growth.
 const STAGE_TIERS = [
   // Stage 1 = most zoomed-in (small arena, big entities relative to view).
   { TILE: 12, COLS: 22, ROWS: 14 },  // Stage 1 (canvas 264x168 -> display 1056x672)
-  { TILE: 10, COLS: 26, ROWS: 17 },  // Stage 2 (260x170 -> 1040x680)
-  { TILE: 8,  COLS: 32, ROWS: 21 },  // Stage 3 (256x168 -> 1024x672)
-  { TILE: 7,  COLS: 38, ROWS: 24 },  // Stage 4 (266x168 -> 1064x672)
-  { TILE: 6,  COLS: 44, ROWS: 28 },  // Stage 5 (264x168 -> 1056x672)
-  { TILE: 5,  COLS: 52, ROWS: 33 },  // Stage 6+ (260x165 -> 1040x660)
+  { TILE: 11, COLS: 24, ROWS: 15 },  // Stage 2 (264x165 -> 1056x660)
+  { TILE: 10, COLS: 26, ROWS: 17 },  // Stage 3 (260x170 -> 1040x680)
+  { TILE: 9,  COLS: 29, ROWS: 19 },  // Stage 4 (261x171 -> 1044x684)
+  { TILE: 8,  COLS: 33, ROWS: 21 },  // Stage 5+ (264x168 -> 1056x672) — zoom plateau
 ];
 
 function setStageDimensions(stage) {
@@ -257,7 +261,6 @@ function reset() {
       { x: cx,     y: cy, type: 'HEAD', cd: 0, px: cx,     py: cy },
       { x: cx - 1, y: cy, type: 'BODY', cd: 0, px: cx - 1, py: cy },
       { x: cx - 2, y: cy, type: 'BODY', cd: 0, px: cx - 2, py: cy },
-      { x: cx - 3, y: cy, type: 'BODY', cd: 0, px: cx - 3, py: cy },
     ],
     headDir: { x: 1, y: 0 },
     enemies: [],
@@ -287,6 +290,8 @@ function reset() {
     shakeUntil: 0,        // performance.now() time until screen shake ends
     shakeAmount: 0,       // peak shake offset in art-pixels
     shakeStart: 0,        // performance.now() shake start (for fade)
+    dashUntil: 0,         // tick (not real-time) when dash i-frames end
+    dashCdUntil: 0,       // tick when dash is available again
   };
   // Now that game exists, compute the stage-1 tickMs so the first tick fires
   // at the right interval (instead of the placeholder 120ms above).
@@ -331,8 +336,10 @@ const ENEMY_KINDS = [
   { weight: 0.04, unlock: 9, radius: 1.05, speed: 0.03, hp: 8, color: '#200408', shape: 'hex' },      // colossus
   // Behavioral kinds — distinct combat decisions, not just stat variants.
   { weight: 0.05, unlock: 5, radius: 0.55, speed: 0.07, hp: 2, color: '#ffaa30', shape: 'circle',   behavior: 'dash'  }, // dasher (telegraph + lunge)
+  { weight: 0.06, unlock: 6, radius: 0.50, speed: 0.10, hp: 2, color: '#ff80c0', shape: 'diamond',  behavior: 'shoot' }, // shooter (ranged hostile projectiles)
   { weight: 0.05, unlock: 7, radius: 0.55, speed: 0.13, hp: 2, color: '#ff60a8', shape: 'circle',   behavior: 'split' }, // splitter (spawns 2 small on death)
   { weight: 0.04, unlock: 8, radius: 0.55, speed: 0.08, hp: 2, color: '#ff9020', shape: 'hex',      behavior: 'bomb'  }, // bomber (AOE on death)
+  { weight: 0.04, unlock: 9, radius: 0.55, speed: 0.09, hp: 3, color: '#80f0c0', shape: 'hex',      behavior: 'heal'  }, // healer (heals adjacent enemies)
 ];
 
 function pickEnemyKind(stage) {
@@ -561,6 +568,15 @@ document.addEventListener('keydown', e => {
   }
   else if (k === '[') game.tickMs = Math.min(400, game.tickMs + 20);
   else if (k === ']') game.tickMs = Math.max(60, game.tickMs - 20);
+  else if (k === 'shift') {
+    // Dash: short i-frame window. Real-time movement isn't affected (snake
+    // stays on its tick cadence) — this is a panic button for tight spots.
+    if (!game.dead && !game.choosingStart && !game.choosing && !game.choosingStage &&
+        game.tick >= game.dashCdUntil) {
+      game.dashUntil = game.tick + 10;
+      game.dashCdUntil = game.tick + 26;
+    }
+  }
   else return;
   if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
 });
@@ -642,6 +658,22 @@ function step() {
     p.px = p.x; p.py = p.y;
     p.x += p.vx; p.y += p.vy;
     p.life--;
+    // Hostile projectiles (from shooters) damage the snake instead of enemies.
+    if (p.hostile) {
+      if (game.iframes <= 0 && game.tick >= game.dashUntil) {
+        for (const seg of game.snake) {
+          let hdx = p.x - seg.x, hdy = p.y - seg.y;
+          if (Math.abs(hdx) > COLS / 2) hdx -= Math.sign(hdx) * COLS;
+          if (Math.abs(hdy) > ROWS / 2) hdy -= Math.sign(hdy) * ROWS;
+          if (Math.hypot(hdx, hdy) < 0.45) {
+            applyDamage();
+            for (let i = 0; i < 6; i++) spawnParticle(p.x, p.y, p.color);
+            return false;
+          }
+        }
+      }
+      return p.life > 0;
+    }
     // hit enemy? (threshold scales with this enemy's radius + projectile radius ~0.3)
     for (const e of game.enemies) {
       if (Math.hypot(e.x - p.x, e.y - p.y) < e.radius + 0.3) {
@@ -698,7 +730,51 @@ function step() {
     const nx = dist > 0.1 ? dx / dist : 0;
     const ny = dist > 0.1 ? dy / dist : 0;
 
-    if (e.behavior === 'dash') {
+    if (e.behavior === 'heal') {
+      // Slow chase; periodically heals every other enemy within 4 tiles by 1
+      // (clamped to maxHp). Forces priority targeting.
+      if (dist > 0.1) {
+        e.x = (e.x + nx * e.speed + COLS) % COLS;
+        e.y = (e.y + ny * e.speed + ROWS) % ROWS;
+      }
+      e.healCd = (e.healCd ?? (40 + rand(30))) - 1;
+      if (e.healCd <= 0) {
+        for (const other of game.enemies) {
+          if (other === e || other.hp >= other.maxHp) continue;
+          let hdx = other.x - e.x, hdy = other.y - e.y;
+          if (Math.abs(hdx) > COLS / 2) hdx -= Math.sign(hdx) * COLS;
+          if (Math.abs(hdy) > ROWS / 2) hdy -= Math.sign(hdy) * ROWS;
+          if (Math.hypot(hdx, hdy) < 4) {
+            other.hp = Math.min(other.maxHp, other.hp + 1);
+            // tiny green spark on the healed target so it reads
+            for (let k = 0; k < 5; k++) spawnParticle(other.x, other.y, '#80f0c0');
+          }
+        }
+        e.healCd = 50 + rand(25);
+      }
+    } else if (e.behavior === 'shoot') {
+      // Stop ~4 tiles away, fire a hostile projectile at the head on cooldown.
+      e.shootCd = (e.shootCd ?? (30 + rand(20))) - 1;
+      const standoff = 4;
+      if (dist > standoff + 0.3) {
+        e.x = (e.x + nx * e.speed + COLS) % COLS;
+        e.y = (e.y + ny * e.speed + ROWS) % ROWS;
+      } else if (dist < standoff - 0.3) {
+        // Back off if the snake gets too close.
+        e.x = (e.x - nx * e.speed + COLS) % COLS;
+        e.y = (e.y - ny * e.speed + ROWS) % ROWS;
+      }
+      if (e.shootCd <= 0) {
+        const sx = nx, sy = ny;
+        game.projectiles.push({
+          px: e.x, py: e.y,
+          x: e.x + sx * 0.4, y: e.y + sy * 0.4,
+          vx: sx * 0.45, vy: sy * 0.45,
+          life: 38, color: '#ff80a0', hostile: true,
+        });
+        e.shootCd = 38 + rand(18);
+      }
+    } else if (e.behavior === 'dash') {
       // Slow chase, periodic telegraph + lunge.
       e.telegraph = (e.telegraph || 0) - 1;
       e.dashFrames = (e.dashFrames || 0) - 1;
@@ -732,7 +808,8 @@ function step() {
   // 9. Snake-enemy contact: apply damage (decay rule).
   //    Per-enemy threshold = enemy radius + body half-side (~0.29), so damage
   //    fires at visual contact regardless of the enemy's size category.
-  if (game.iframes <= 0) {
+  //    Skipped while dashing.
+  if (game.iframes <= 0 && game.tick >= game.dashUntil) {
     let contacted = false;
     outer:
     for (const e of game.enemies) {
@@ -805,7 +882,7 @@ function step() {
         speed: 0.35, life: 14,
         color: '#ff9020', damage: false, hit: new Set()
       });
-      if (game.iframes <= 0) {
+      if (game.iframes <= 0 && game.tick >= game.dashUntil) {
         for (const seg of game.snake) {
           let bdx = e.x - seg.x, bdy = e.y - seg.y;
           if (Math.abs(bdx) > COLS / 2) bdx -= Math.sign(bdx) * COLS;
@@ -1306,7 +1383,9 @@ function render() {
     const sx = (rx + 0.5) * TILE;
     const sy = (ry + 0.5) * TILE;
     const def = SEG[seg.type];
-    const headColor = (game.iframes > 0 && Math.floor(game.tick / 2) % 2 === 0) ? '#ff4060' : def.color;
+    const dashing = isHead && game.tick < game.dashUntil;
+    const damageFlicker = game.iframes > 0 && Math.floor(game.tick / 2) % 2 === 0;
+    const headColor = dashing ? '#ffffff' : (damageFlicker ? '#ff4060' : def.color);
     ctx.fillStyle = isHead ? headColor : def.color;
     ctx.shadowColor = isHead ? headColor : def.color;
     ctx.shadowBlur = isHead ? 10 : (seg.type === 'BODY' ? 0 : 12);
@@ -1356,17 +1435,28 @@ function render() {
     }
   });
 
-  // projectiles
+  // projectiles — hostile shots are smaller + ringed so the player can tell
+  // their own shots from incoming threats.
   game.projectiles.forEach(p => {
     const rx = p.px + (p.x - p.px) * lerpT;
     const ry = p.py + (p.y - p.py) * lerpT;
+    const cx = (rx + 0.5) * TILE;
+    const cy = (ry + 0.5) * TILE;
+    const r = p.hostile ? TILE * 0.22 : TILE * 0.32;
     ctx.fillStyle = p.color;
     ctx.shadowColor = p.color;
-    ctx.shadowBlur = TILE * 0.55;
+    ctx.shadowBlur = TILE * (p.hostile ? 0.4 : 0.55);
     ctx.beginPath();
-    ctx.arc((rx + 0.5) * TILE, (ry + 0.5) * TILE, TILE * 0.32, 0, Math.PI * 2);
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
+    if (p.hostile) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   });
 
   // particles — small chunky pixels, semi-transparent so kill bursts don't

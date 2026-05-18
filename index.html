@@ -176,7 +176,7 @@
     <div class="ctrl-row"><span class="key">[</span> slower &nbsp; <span class="key">]</span> faster</div>
 
     <div class="hint">
-      Pick a head ability at the start — <b style="color:#ff3060">LASER</b>, <b style="color:#88ddff">ICE</b>, or <b style="color:#ff8855">FLAME</b>. The snake starts with the head only — one hit and you die, so dodge. Each stage is waves of enemies; clear them all and you earn a body special. New stages unlock new enemy kinds, ramp wave size, and zoom the camera out — by stage 7+ much bigger, tougher heavies appear.
+      Pick a head ability at the start — <b style="color:#ff3060">LASER</b>, <b style="color:#88ddff">ICE</b>, or <b style="color:#ff8855">FLAME</b>. The snake starts as head + 3 BODY (3 hits of armor). Each stage is waves of enemies; clear them all and you earn a body special. New stages unlock new enemy kinds, ramp wave size, and zoom the camera out — by stage 7+ much bigger, tougher heavies appear.
     </div>
   </div>
 </div>
@@ -242,7 +242,10 @@ function reset() {
   const cy = Math.floor(ROWS / 2);
   game = {
     snake: [
-      { x: cx, y: cy, type: 'HEAD', cd: 0, px: cx, py: cy },
+      { x: cx,     y: cy, type: 'HEAD', cd: 0, px: cx,     py: cy },
+      { x: cx - 1, y: cy, type: 'BODY', cd: 0, px: cx - 1, py: cy },
+      { x: cx - 2, y: cy, type: 'BODY', cd: 0, px: cx - 2, py: cy },
+      { x: cx - 3, y: cy, type: 'BODY', cd: 0, px: cx - 3, py: cy },
     ],
     headDir: { x: 1, y: 0 },
     enemies: [],
@@ -329,10 +332,11 @@ function spawnEnemy() {
   });
 }
 
-// Stage / wave shape. Stages 1–2 are warm-up; from stage 3 the wave count
-// and per-wave enemy count both ramp hard.
+// Stage / wave shape. Stages 1–2 are gentle warm-up (player still learning
+// movement + firing). From stage 3 the wave count and per-wave size both
+// ramp hard.
 function waveSize(stage, wave) {
-  if (stage <= 2) return 4 + stage * 2 + wave;
+  if (stage <= 2) return 3 + stage + wave;
   return 8 + stage + wave * stage;
 }
 function wavesPerStage(stage) {

@@ -5,11 +5,11 @@
 <title>Snake Roguelike — Combo Feel Test</title>
 <style>
   :root {
-    --bg: #0d0e15;
-    --panel: #1a1d2a;
-    --text: #d4d7e3;
-    --dim: #6a6f85;
-    --accent: #ffd84b;
+    --bg: #1f3325;        /* dark mossy green page backdrop */
+    --panel: #e8dca8;     /* cream side panel */
+    --text: #2a1a08;      /* near-black brown text on the cream panel */
+    --dim: #6a5a3a;       /* muted brown-tan for secondary text */
+    --accent: #b22e2e;    /* warm crimson for headings and underlines */
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -28,21 +28,23 @@
     padding: 16px;
   }
   #game {
-    background: #0a0b11;
-    border: 1px solid #1f2333;
-    border-radius: 6px;
+    background: #2c4632;
+    border: 2px solid #4a2818;
+    border-radius: 4px;
     image-rendering: pixelated;
   }
   .panel {
     width: 280px;
     background: var(--panel);
-    border-radius: 6px;
+    border: 2px solid #4a2818;
+    border-radius: 4px;
     padding: 18px;
     font-size: 13px;
     line-height: 1.5;
     align-self: stretch;
     margin: 16px 0;
     overflow-y: auto;
+    color: var(--text);
   }
   .panel h1 {
     font-size: 14px;
@@ -67,14 +69,14 @@
   }
   .key {
     display: inline-block;
-    background: #2a2e42;
+    background: #c8b884;
     color: var(--text);
     padding: 1px 6px;
     border-radius: 3px;
     font-size: 11px;
     margin: 0 1px;
     font-family: inherit;
-    border: 1px solid #3a3f55;
+    border: 1px solid #8a7a58;
   }
   .seg-row {
     display: flex;
@@ -95,7 +97,7 @@
     flex-wrap: wrap;
     gap: 3px;
     padding: 8px;
-    background: #11131c;
+    background: rgba(40, 50, 30, 0.18);
     border-radius: 4px;
     min-height: 36px;
     align-items: center;
@@ -128,17 +130,20 @@
     font-variant-numeric: tabular-nums;
   }
   .ctrl-row {
+    color: var(--text);
+  }
+  .ctrl-row {
     margin-top: 4px;
     font-size: 11px;
   }
   .hint {
     margin-top: 12px;
     padding: 8px;
-    background: #11131c;
-    border-left: 2px solid var(--accent);
+    background: rgba(40, 50, 30, 0.15);
+    border-left: 3px solid var(--accent);
     border-radius: 3px;
     font-size: 11px;
-    color: var(--dim);
+    color: #4a3818;
     line-height: 1.4;
   }
 </style>
@@ -218,7 +223,7 @@ const SEG = {
   // The head's ability is picked at the start (laser / ice / flame). SEG.HEAD.color
   // is mutated at pick time so the head and chain visualization tint to match.
   HEAD:   { color: '#ff3060', label: '◉', cooldown: 0 },
-  BODY:   { color: '#5a607a', label: '·',  cooldown: 0 },
+  BODY:   { color: '#c2b48a', label: '·',  cooldown: 0 },
   FLAME:  { color: '#ff6b35', label: 'F',  cooldown: 18 },
   MAGNET: { color: '#a64bff', label: 'M',  cooldown: 6 },
   SHIELD: { color: '#4bd9ff', label: 'S',  cooldown: 14 },
@@ -951,10 +956,11 @@ const BODY_OPTS = [
 ];
 
 function renderChoiceCard(title, opts) {
-  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  // Dim the world with a green-tinted scrim instead of pure black.
+  ctx.fillStyle = 'rgba(20, 36, 26, 0.78)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = '#ffd84b';
+  ctx.fillStyle = '#f4e4b8';
   ctx.font = 'bold 22px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -966,9 +972,12 @@ function renderChoiceCard(title, opts) {
 
   opts.forEach((o, idx) => {
     const y = startY + idx * rowH;
-    // Card row background
-    ctx.fillStyle = 'rgba(26,29,42,0.9)';
+    // Cream "card" row with a warm border, like the side panel.
+    ctx.fillStyle = '#e8dca8';
     ctx.fillRect(cx - 220, y - 25, 440, 50);
+    ctx.strokeStyle = '#4a2818';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - 220, y - 25, 440, 50);
     // Color disc
     ctx.fillStyle = o.color;
     ctx.shadowColor = o.color;
@@ -982,12 +991,12 @@ function renderChoiceCard(title, opts) {
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
     ctx.fillText(o.label, cx - 180, y);
-    // Key + name + hint
-    ctx.fillStyle = '#d4d7e3';
+    // Key + name + hint, dark text on cream
+    ctx.fillStyle = '#2a1a08';
     ctx.font = 'bold 16px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(`[${o.key}] ${o.name}`, cx - 150, y);
-    ctx.fillStyle = '#6a6f85';
+    ctx.fillStyle = '#6a5a3a';
     ctx.font = '13px monospace';
     ctx.fillText(o.hint, cx - 150, y + 18);
   });
@@ -1001,32 +1010,33 @@ function render() {
   const lerpT = Math.max(0, Math.min(1, (performance.now() - game.lastStep) / game.tickMs));
   const now = performance.now();
 
-  // Between-stages: clean dark backdrop + reward card. No world chrome, so
-  // frozen particles / pulses / the live scan sweep don't leak through.
+  // Between-stages: clean dark-green backdrop + reward card. No world chrome,
+  // so frozen particles / pulses / the live sweep don't leak through.
   if (game.choosingStage) {
-    ctx.fillStyle = '#04060c';
+    ctx.fillStyle = '#1a2e22';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     renderChoiceCard(`STAGE ${game.stage} CLEARED — PICK A SEGMENT`, BODY_OPTS);
     updatePanel();
     return;
   }
 
-  // base fill (deep near-black)
-  ctx.fillStyle = '#06070d';
+  // base fill — mossy green "felt" like a card table
+  ctx.fillStyle = '#2c4632';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // ambient scan-line sweep: a slow cyan band scrolls down the playfield
+  // ambient sweep: a slow warm-cream band drifts down the felt (subtle, like
+  // light tracking across the table)
   const sweepY = ((now / 22) % (canvas.height + 200)) - 100;
   const sweepGrad = ctx.createLinearGradient(0, sweepY - 90, 0, sweepY + 90);
-  sweepGrad.addColorStop(0, 'rgba(80, 200, 255, 0)');
-  sweepGrad.addColorStop(0.5, 'rgba(80, 200, 255, 0.07)');
-  sweepGrad.addColorStop(1, 'rgba(80, 200, 255, 0)');
+  sweepGrad.addColorStop(0, 'rgba(240, 220, 170, 0)');
+  sweepGrad.addColorStop(0.5, 'rgba(240, 220, 170, 0.04)');
+  sweepGrad.addColorStop(1, 'rgba(240, 220, 170, 0)');
   ctx.fillStyle = sweepGrad;
   ctx.fillRect(0, sweepY - 90, canvas.width, 180);
 
-  // pulsing neon grid (replaces the old near-invisible #11131c grid)
-  const gridAlpha = 0.32 + Math.sin(now / 1200) * 0.08;
-  ctx.strokeStyle = `rgba(64, 110, 170, ${gridAlpha})`;
+  // pulsing grid — slightly darker green than the base, breathes gently
+  const gridAlpha = 0.22 + Math.sin(now / 1200) * 0.06;
+  ctx.strokeStyle = `rgba(30, 55, 38, ${gridAlpha})`;
   ctx.lineWidth = 1;
   for (let x = 0; x <= COLS; x++) {
     ctx.beginPath();
@@ -1239,20 +1249,22 @@ function render() {
     ctx.globalAlpha = 1;
   });
 
-  // CRT scanlines — fine horizontal dim bands over the whole canvas
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
-  for (let y = 0; y < canvas.height; y += 3) {
+  // Subtle felt-grain scanlines — much lighter than the old CRT pass so the
+  // theme stays bright. Just a hint of texture, not a CRT effect.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+  for (let y = 0; y < canvas.height; y += 4) {
     ctx.fillRect(0, y, canvas.width, 1);
   }
 
-  // vignette — radial darkening toward the corners for depth
+  // Soft green vignette — keeps focus on the center without the heavy black
+  // edges of the old CRT theme.
   const vcx = canvas.width / 2;
   const vcy = canvas.height / 2;
-  const vmin = Math.min(vcx, vcy) * 0.55;
-  const vmax = Math.max(vcx, vcy) * 1.05;
+  const vmin = Math.min(vcx, vcy) * 0.65;
+  const vmax = Math.max(vcx, vcy) * 1.1;
   const vignette = ctx.createRadialGradient(vcx, vcy, vmin, vcx, vcy, vmax);
   vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+  vignette.addColorStop(1, 'rgba(20, 36, 26, 0.45)');
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 

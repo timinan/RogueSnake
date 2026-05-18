@@ -283,6 +283,10 @@ function reset() {
     stage: 1,
     wave: 1,
     waveQueue: 0,         // remaining enemies to spawn this wave
+    hitStopUntil: 0,      // performance.now() time until hit-stop ends
+    shakeUntil: 0,        // performance.now() time until screen shake ends
+    shakeAmount: 0,       // peak shake offset in art-pixels
+    shakeStart: 0,        // performance.now() shake start (for fade)
   };
   // Now that game exists, compute the stage-1 tickMs so the first tick fires
   // at the right interval (instead of the placeholder 120ms above).
@@ -325,6 +329,10 @@ const ENEMY_KINDS = [
   { weight: 0.05, unlock: 7, radius: 0.85, speed: 0.05, hp: 6, color: '#3a0820', shape: 'circle' },   // mega bruiser
   { weight: 0.06, unlock: 8, radius: 0.55, speed: 0.26, hp: 3, color: '#ff20d0', shape: 'diamond' },  // heavy scout (fast + tough)
   { weight: 0.04, unlock: 9, radius: 1.05, speed: 0.03, hp: 8, color: '#200408', shape: 'hex' },      // colossus
+  // Behavioral kinds — distinct combat decisions, not just stat variants.
+  { weight: 0.05, unlock: 5, radius: 0.55, speed: 0.07, hp: 2, color: '#ffaa30', shape: 'circle',   behavior: 'dash'  }, // dasher (telegraph + lunge)
+  { weight: 0.05, unlock: 7, radius: 0.55, speed: 0.13, hp: 2, color: '#ff60a8', shape: 'circle',   behavior: 'split' }, // splitter (spawns 2 small on death)
+  { weight: 0.04, unlock: 8, radius: 0.55, speed: 0.08, hp: 2, color: '#ff9020', shape: 'hex',      behavior: 'bomb'  }, // bomber (AOE on death)
 ];
 
 function pickEnemyKind(stage) {
@@ -677,19 +685,47 @@ function step() {
     p.bob += 0.18;
   });
 
-  // 8. Enemies — move toward head every tick. Per-enemy speed (set at spawn)
-  //    gives the small ones a chase-y feel and the big ones a lumbering one.
+  // 8. Enemies — behavior-dispatched movement. Default 'chase' for all the
+  //    base kinds. Special kinds get reactive patterns.
   game.enemies.forEach(e => {
     e.hitFlash = Math.max(0, e.hitFlash - 1);
     e.px = e.x; e.py = e.y;
-    // shortest path on torus
+    // Shortest path to the head on the torus (used by most behaviors).
     let dx = head.x - e.x, dy = head.y - e.y;
     if (Math.abs(dx) > COLS / 2) dx -= Math.sign(dx) * COLS;
     if (Math.abs(dy) > ROWS / 2) dy -= Math.sign(dy) * ROWS;
     const dist = Math.hypot(dx, dy);
-    if (dist > 0.1) {
-      e.x = (e.x + dx / dist * e.speed + COLS) % COLS;
-      e.y = (e.y + dy / dist * e.speed + ROWS) % ROWS;
+    const nx = dist > 0.1 ? dx / dist : 0;
+    const ny = dist > 0.1 ? dy / dist : 0;
+
+    if (e.behavior === 'dash') {
+      // Slow chase, periodic telegraph + lunge.
+      e.telegraph = (e.telegraph || 0) - 1;
+      e.dashFrames = (e.dashFrames || 0) - 1;
+      e.dashCooldown = (e.dashCooldown ?? 60) - 1;
+      let spd = e.speed;
+      if (e.dashFrames > 0) {
+        spd = e.speed * 4.5;             // mid-lunge
+      } else if (e.telegraph > 0) {
+        spd = 0;                          // freeze while telegraphing
+      } else if (e.dashCooldown <= 0) {
+        e.telegraph = 8;                  // start telegraphing
+        e.dashCooldown = 70 + rand(40);   // schedule next cycle
+        spd = 0;
+      }
+      if (e.telegraph <= 0 && spd > 0) {
+        e.x = (e.x + nx * spd + COLS) % COLS;
+        e.y = (e.y + ny * spd + ROWS) % ROWS;
+        if (e.telegraph === 0 && e.dashFrames <= 0) {
+          e.dashFrames = 4;               // fire the lunge right after telegraph ends
+        }
+      }
+    } else {
+      // Default chase: move toward the head at e.speed.
+      if (dist > 0.1) {
+        e.x = (e.x + nx * e.speed + COLS) % COLS;
+        e.y = (e.y + ny * e.speed + ROWS) % ROWS;
+      }
     }
   });
 
@@ -732,6 +768,55 @@ function step() {
       speed: 0.4, life: 14,
       color: e.color, damage: false, hit: new Set()
     });
+    // Juice: scale hit-stop + screen shake with how chunky the kill is. HP-1
+    // kills get nothing so the constant small-swarm slaughter doesn't stutter.
+    if (e.maxHp >= 2) {
+      const hitStopMs = Math.min(110, e.maxHp * 18);
+      const now = performance.now();
+      // Stack hit-stop windows so consecutive big kills extend the freeze.
+      game.hitStopUntil = Math.max(game.hitStopUntil, now + hitStopMs);
+      const shakePx = Math.min(TILE * 0.6, e.maxHp * 0.6);
+      const shakeMs = 90 + e.maxHp * 25;
+      game.shakeUntil = Math.max(game.shakeUntil, now + shakeMs);
+      game.shakeStart = now;
+      game.shakeAmount = Math.max(game.shakeAmount, shakePx);
+    }
+    // Splitter: spawn 2 small swarm enemies at the death position.
+    if (e.behavior === 'split') {
+      const small = ENEMY_KINDS.find(k => k.unlock === 1); // small swarm
+      for (let s = 0; s < 2; s++) {
+        const angle = Math.random() * Math.PI * 2;
+        const offX = Math.cos(angle) * 0.5;
+        const offY = Math.sin(angle) * 0.5;
+        game.enemies.push({
+          x: (e.x + offX + COLS) % COLS,
+          y: (e.y + offY + ROWS) % ROWS,
+          px: e.x, py: e.y,
+          hp: small.hp, maxHp: small.hp, hitFlash: 0,
+          radius: small.radius, speed: small.speed,
+          color: small.color, shape: small.shape,
+        });
+      }
+    }
+    // Bomber: visual blast + instant AOE damage check against the snake.
+    if (e.behavior === 'bomb') {
+      game.pulses.push({
+        x: e.x, y: e.y, r: 0, pr: 0, maxR: 2.4,
+        speed: 0.35, life: 14,
+        color: '#ff9020', damage: false, hit: new Set()
+      });
+      if (game.iframes <= 0) {
+        for (const seg of game.snake) {
+          let bdx = e.x - seg.x, bdy = e.y - seg.y;
+          if (Math.abs(bdx) > COLS / 2) bdx -= Math.sign(bdx) * COLS;
+          if (Math.abs(bdy) > ROWS / 2) bdy -= Math.sign(bdy) * ROWS;
+          if (Math.hypot(bdx, bdy) < 2.0) {
+            applyDamage();
+            break;
+          }
+        }
+      }
+    }
   });
   // Pickup drops on kill (rare — pickups are a real reward, not litter).
   for (let i = 0; i < killed; i++) {
@@ -1030,8 +1115,24 @@ function render() {
   // Clamp to [0, 1] — performance.now() can read marginally before game.lastStep
   // when setDir's early-tick path just fired step(), producing a tiny negative
   // lerpT that would otherwise drive ctx.arc to negative radii on fresh pulses.
-  const lerpT = Math.max(0, Math.min(1, (performance.now() - game.lastStep) / game.tickMs));
+  // During hit-stop, lerpT is frozen at 0 so entities don't drift visually.
   const now = performance.now();
+  const lerpT = now < game.hitStopUntil
+    ? 0
+    : Math.max(0, Math.min(1, (now - game.lastStep) / game.tickMs));
+
+  // Screen shake: translate the world by a fading random offset. Wrapped in
+  // save/restore so the choice card and DEAD overlays drawn later sit still.
+  let shakeX = 0, shakeY = 0;
+  if (now < game.shakeUntil) {
+    const total = game.shakeUntil - game.shakeStart;
+    const remaining = total > 0 ? (game.shakeUntil - now) / total : 0;
+    const mag = game.shakeAmount * remaining;
+    shakeX = (Math.random() - 0.5) * 2 * mag;
+    shakeY = (Math.random() - 0.5) * 2 * mag;
+  }
+  ctx.save();
+  ctx.translate(Math.round(shakeX), Math.round(shakeY));
 
   // Between-stages: clean dark-green backdrop + reward card. No world chrome,
   // so frozen particles / pulses / the live sweep don't leak through.
@@ -1137,7 +1238,11 @@ function render() {
     const ex = (rx + 0.5) * TILE;
     const ey = (ry + 0.5) * TILE;
     const er = TILE * e.radius;
-    const bodyColor = e.hitFlash > 0 ? '#fff' : e.color;
+    // Telegraph flash for dashers — bright yellow blink so the lunge is readable.
+    const blinking = e.telegraph > 0 && Math.floor(e.telegraph / 2) % 2 === 0;
+    const bodyColor = e.hitFlash > 0
+      ? '#fff'
+      : (blinking ? '#ffe060' : e.color);
 
     // monster decorations behind the body (feet / wings / spikes / tail)
     drawDecorations(ex, ey, er, e.shape, bodyColor);
@@ -1292,6 +1397,9 @@ function render() {
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  // End of the shaken "world" layer — overlays below sit still.
+  ctx.restore();
+
   if (game.choosingStart) {
     renderChoiceCard('PICK YOUR HEAD ABILITY', HEAD_OPTS);
   } else if (game.choosing) {
@@ -1361,7 +1469,11 @@ function updatePanel() {
 
 // === MAIN LOOP ===
 function loop(now) {
-  if (now - game.lastStep >= game.tickMs) {
+  // Hit-stop: real-time freeze of step() for a brief window after big kills.
+  // We keep advancing lastStep so the timer doesn't catch up after the freeze.
+  if (now < game.hitStopUntil) {
+    game.lastStep = now;
+  } else if (now - game.lastStep >= game.tickMs) {
     game.lastStep = now;
     step();
   }

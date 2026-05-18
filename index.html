@@ -150,7 +150,7 @@
 </head>
 <body>
 <div class="wrap">
-  <canvas id="game" width="1044" height="648"></canvas>
+  <canvas id="game" width="264" height="168" style="width: 1056px; height: 672px;"></canvas>
   <div class="panel">
     <h1>SNAKE ROGUELIKE</h1>
     <div class="subtitle">combo feel test · v0.1</div>
@@ -171,11 +171,12 @@
     <div class="seg-row"><div class="seg-dot" style="background:#a64bff;color:#a64bff"></div><span><b style="color:#a64bff">Magnet</b> · pulls pickups</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#4bd9ff;color:#4bd9ff"></div><span><b style="color:#4bd9ff">Shield</b> · damaging shockwave</span></div>
     <div class="seg-row"><div class="seg-dot" style="background:#ffd84b;color:#ffd84b"></div><span><b style="color:#ffd84b">Echo</b> · repeats segment in front</span></div>
+    <div class="seg-row"><div class="seg-dot" style="background:#80e0f0;color:#80e0f0"></div><span><b style="color:#80e0f0">Speed</b> · snake moves faster per stack</span></div>
 
     <h3>Controls</h3>
     <div class="ctrl-row"><span class="key">WASD</span> / <span class="key">↑↓←→</span> steer</div>
     <div class="ctrl-row"><span class="key">SPACE</span> fire fireball from the head</div>
-    <div class="ctrl-row"><span class="key">1</span> add Magnet &nbsp; <span class="key">2</span> add Shield &nbsp; <span class="key">3</span> add Echo</div>
+    <div class="ctrl-row"><span class="key">1</span> Magnet &nbsp; <span class="key">2</span> Shield &nbsp; <span class="key">3</span> Echo &nbsp; <span class="key">4</span> Speed</div>
     <div class="ctrl-row"><span class="key">X</span> drop tail &nbsp; <span class="key">R</span> reset</div>
     <div class="ctrl-row"><span class="key">C</span> open choice card mid-game</div>
     <div class="ctrl-row"><span class="key">[</span> slower &nbsp; <span class="key">]</span> faster</div>
@@ -189,24 +190,23 @@
 'use strict';
 
 // === CONSTANTS ===
-// Per-stage zoom: TILE shrinks and the arena grows as stages advance, so the
-// world feels like it's zooming out around the same-sized canvas. Values write
-// to these let-bindings via setStageDimensions(stage).
-let COLS = 29, ROWS = 18, TILE = 36;
+// Pixel-art mode: canvas internal resolution is small, then CSS-upscaled
+// PIXEL_SCALE× with image-rendering: pixelated for chunky pixels. TILE is now
+// in art-pixels per game-tile; everything that already used TILE (entity
+// sizes, positions, projectile radii) scales automatically.
+let COLS = 22, ROWS = 14, TILE = 12;
+const PIXEL_SCALE = 4;
 
 const STAGE_TIERS = [
-  // Stage 1 = most zoomed-in (small arena, big entities).
-  { TILE: 36, COLS: 29, ROWS: 18 },  // Stage 1
-  { TILE: 30, COLS: 35, ROWS: 22 },  // Stage 2
-  { TILE: 24, COLS: 44, ROWS: 28 },  // Stage 3
-  { TILE: 20, COLS: 52, ROWS: 33 },  // Stage 4
-  { TILE: 18, COLS: 58, ROWS: 37 },  // Stage 5
-  { TILE: 16, COLS: 66, ROWS: 42 },  // Stage 6+ (most zoomed-out)
+  // Stage 1 = most zoomed-in (small arena, big entities relative to view).
+  { TILE: 12, COLS: 22, ROWS: 14 },  // Stage 1 (canvas 264x168 -> display 1056x672)
+  { TILE: 10, COLS: 26, ROWS: 17 },  // Stage 2 (260x170 -> 1040x680)
+  { TILE: 8,  COLS: 32, ROWS: 21 },  // Stage 3 (256x168 -> 1024x672)
+  { TILE: 7,  COLS: 38, ROWS: 24 },  // Stage 4 (266x168 -> 1064x672)
+  { TILE: 6,  COLS: 44, ROWS: 28 },  // Stage 5 (264x168 -> 1056x672)
+  { TILE: 5,  COLS: 52, ROWS: 33 },  // Stage 6+ (260x165 -> 1040x660)
 ];
 
-// Writes the let-bound TILE / COLS / ROWS for the given stage and resizes the
-// canvas to fit. Safe to call any time canvas is defined (i.e., after the
-// canvas const at the bottom of the script is initialized).
 function setStageDimensions(stage) {
   const idx = Math.min(stage, STAGE_TIERS.length) - 1;
   const tier = STAGE_TIERS[idx];
@@ -216,6 +216,11 @@ function setStageDimensions(stage) {
   const c = document.getElementById('game');
   c.width = COLS * TILE;
   c.height = ROWS * TILE;
+  c.style.width = (c.width * PIXEL_SCALE) + 'px';
+  c.style.height = (c.height * PIXEL_SCALE) + 'px';
+  // Resizing the canvas resets the 2D context state — re-disable smoothing
+  // so the upscale stays nearest-neighbor (chunky pixels).
+  c.getContext('2d').imageSmoothingEnabled = false;
 }
 
 // Segment definitions (positional triggers)
@@ -228,6 +233,8 @@ const SEG = {
   MAGNET: { color: '#a64bff', label: 'M',  cooldown: 6 },
   SHIELD: { color: '#4bd9ff', label: 'S',  cooldown: 14 },
   ECHO:   { color: '#ffd84b', label: 'E',  cooldown: 0 },
+  // SPEED: passive, decreases tickMs per segment owned.
+  SPEED:  { color: '#80e0f0', label: '»',  cooldown: 0 },
 };
 
 // Head-ability color map. The starting choice card writes the picked entry into
@@ -277,6 +284,9 @@ function reset() {
     wave: 1,
     waveQueue: 0,         // remaining enemies to spawn this wave
   };
+  // Now that game exists, compute the stage-1 tickMs so the first tick fires
+  // at the right interval (instead of the placeholder 120ms above).
+  game.tickMs = computeTickMs();
   // Enemies/pickups spawn after the starting choice is made.
 }
 
@@ -348,6 +358,15 @@ function wavesPerStage(stage) {
 }
 function maxActiveEnemies(stage) {
   return Math.min(15, 6 + stage);
+}
+
+// Stage-aware tick speed. Zoomed-in stages (low stage number, big art-pixels)
+// felt too fast because the snake traverses the small arena quickly — base
+// tickMs starts slow and ramps down. Each SPEED body segment shaves more off.
+function computeTickMs() {
+  const base = Math.max(95, 195 - game.stage * 12);
+  const speedSegs = game.snake.reduce((n, s) => n + (s.type === 'SPEED' ? 1 : 0), 0);
+  return Math.max(60, base - speedSegs * 14);
 }
 
 function startWave() {
@@ -505,15 +524,16 @@ document.addEventListener('keydown', e => {
   else if (k === 'arrowdown' || k === 's') setDir(0, 1);
   else if (k === 'arrowleft' || k === 'a') setDir(-1, 0);
   else if (k === 'arrowright' || k === 'd') setDir(1, 0);
-  else if (k === '1' || k === '2' || k === '3') {
+  else if (k === '1' || k === '2' || k === '3' || k === '4') {
     if (game.choosingStart) {
+      if (k === '4') return; // no 4th head option
       const headMap = { '1': 'laser', '2': 'ice', '3': 'flame' };
       pickStartingHead(headMap[k]);
     } else if (game.choosingStage) {
-      const bodyMap = { '1': 'MAGNET', '2': 'SHIELD', '3': 'ECHO' };
+      const bodyMap = { '1': 'MAGNET', '2': 'SHIELD', '3': 'ECHO', '4': 'SPEED' };
       pickStageReward(bodyMap[k]);
     } else {
-      const bodyMap = { '1': 'MAGNET', '2': 'SHIELD', '3': 'ECHO' };
+      const bodyMap = { '1': 'MAGNET', '2': 'SHIELD', '3': 'ECHO', '4': 'SPEED' };
       addSegment(bodyMap[k]);
       if (game.choosing) game.choosing = false;
     }
@@ -541,6 +561,10 @@ document.addEventListener('keydown', e => {
 function step() {
   if (game.dead) return;
   if (game.choosingStart || game.choosing || game.choosingStage) return;
+  // Recompute tickMs each tick — cheap, and ensures stage changes / new SPEED
+  // segments take effect immediately for both the main-loop interval and the
+  // render-side lerp.
+  game.tickMs = computeTickMs();
   if (game.iframes > 0) game.iframes--;
   game.tick++;
 
@@ -571,10 +595,10 @@ function step() {
   });
 
   // 4. Ability cooldowns + triggers. HEAD is skipped here — the player fires
-  //    it manually with SPACE. BODY and ECHO don't fire on their own either.
+  //    it manually with SPACE. BODY, ECHO, and SPEED don't fire on their own.
   for (let i = 0; i < game.snake.length; i++) {
     const seg = game.snake[i];
-    if (seg.type === 'BODY' || seg.type === 'ECHO' || seg.type === 'HEAD') continue;
+    if (seg.type === 'BODY' || seg.type === 'ECHO' || seg.type === 'HEAD' || seg.type === 'SPEED') continue;
     seg.cd--;
     if (seg.cd <= 0) {
       triggerAbility(i, seg.type);
@@ -698,9 +722,11 @@ function step() {
   // Chunky death effects: radial burst in the enemy's color, accent sparks,
   // expanding ring. Size scales with the enemy's radius so big kills feel big.
   dying.forEach(e => {
-    const burst = 14 + Math.floor(e.radius * 50);
+    // Dialled down: roughly half the previous burst counts so kills feel
+    // satisfying without flooding the screen.
+    const burst = 8 + Math.floor(e.radius * 22);
     spawnBurst(e.x, e.y, e.color, burst, 0.7 + e.radius * 0.6);
-    spawnBurst(e.x, e.y, '#fff0c0', Math.max(5, Math.floor(e.radius * 14)), 1.4);
+    spawnBurst(e.x, e.y, '#fff0c0', Math.max(3, Math.floor(e.radius * 7)), 1.4);
     game.pulses.push({
       x: e.x, y: e.y, r: 0, pr: 0, maxR: 1 + e.radius * 3,
       speed: 0.4, life: 14,
@@ -953,6 +979,7 @@ const BODY_OPTS = [
   { key: '1', color: '#a64bff', label: 'M', name: 'MAGNET', hint: 'pulls pickups' },
   { key: '2', color: '#4bd9ff', label: 'S', name: 'SHIELD', hint: 'damaging shockwave' },
   { key: '3', color: '#ffd84b', label: 'E', name: 'ECHO',   hint: 'amplifies the segment in front' },
+  { key: '4', color: '#80e0f0', label: '»', name: 'SPEED',  hint: 'snake moves faster per stack' },
 ];
 
 function renderChoiceCard(title, opts) {
@@ -961,44 +988,40 @@ function renderChoiceCard(title, opts) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.fillStyle = '#f4e4b8';
-  ctx.font = 'bold 22px monospace';
+  ctx.font = 'bold 9px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(title, canvas.width / 2, 90);
+  ctx.fillText(title, canvas.width / 2, 22);
 
   const cx = canvas.width / 2;
-  const startY = 170;
-  const rowH = 70;
+  const startY = 50;
+  const rowH = 22;
+  const rowW = Math.min(220, canvas.width - 16);
 
   opts.forEach((o, idx) => {
     const y = startY + idx * rowH;
     // Cream "card" row with a warm border, like the side panel.
     ctx.fillStyle = '#e8dca8';
-    ctx.fillRect(cx - 220, y - 25, 440, 50);
+    ctx.fillRect(cx - rowW / 2, y - 8, rowW, 16);
     ctx.strokeStyle = '#4a2818';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(cx - 220, y - 25, 440, 50);
-    // Color disc
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx - rowW / 2, y - 8, rowW, 16);
+    // Color swatch — a small square to match the pixel-art aesthetic.
     ctx.fillStyle = o.color;
-    ctx.shadowColor = o.color;
-    ctx.shadowBlur = 14;
-    ctx.beginPath();
-    ctx.arc(cx - 180, y, 14, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.fillRect(cx - rowW / 2 + 6, y - 5, 10, 10);
     ctx.fillStyle = '#000';
-    ctx.font = 'bold 14px monospace';
+    ctx.font = 'bold 7px monospace';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
-    ctx.fillText(o.label, cx - 180, y);
+    ctx.fillText(o.label, cx - rowW / 2 + 11, y);
     // Key + name + hint, dark text on cream
     ctx.fillStyle = '#2a1a08';
-    ctx.font = 'bold 16px monospace';
+    ctx.font = 'bold 8px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(`[${o.key}] ${o.name}`, cx - 150, y);
+    ctx.fillText(`[${o.key}] ${o.name}`, cx - rowW / 2 + 22, y - 2);
     ctx.fillStyle = '#6a5a3a';
-    ctx.font = '13px monospace';
-    ctx.fillText(o.hint, cx - 150, y + 18);
+    ctx.font = '6px monospace';
+    ctx.fillText(o.hint, cx - rowW / 2 + 22, y + 5);
   });
 }
 
@@ -1024,15 +1047,15 @@ function render() {
   ctx.fillStyle = '#2c4632';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // ambient sweep: a slow warm-cream band drifts down the felt (subtle, like
-  // light tracking across the table)
-  const sweepY = ((now / 22) % (canvas.height + 200)) - 100;
-  const sweepGrad = ctx.createLinearGradient(0, sweepY - 90, 0, sweepY + 90);
+  // ambient sweep: TILE-scaled so it stays subtle on the small internal canvas
+  const sweepBand = TILE * 4;
+  const sweepY = ((now / 22) % (canvas.height + sweepBand * 2)) - sweepBand;
+  const sweepGrad = ctx.createLinearGradient(0, sweepY - sweepBand / 2, 0, sweepY + sweepBand / 2);
   sweepGrad.addColorStop(0, 'rgba(240, 220, 170, 0)');
-  sweepGrad.addColorStop(0.5, 'rgba(240, 220, 170, 0.04)');
+  sweepGrad.addColorStop(0.5, 'rgba(240, 220, 170, 0.05)');
   sweepGrad.addColorStop(1, 'rgba(240, 220, 170, 0)');
   ctx.fillStyle = sweepGrad;
-  ctx.fillRect(0, sweepY - 90, canvas.width, 180);
+  ctx.fillRect(0, sweepY - sweepBand / 2, canvas.width, sweepBand);
 
   // pulsing grid — slightly darker green than the base, breathes gently
   const gridAlpha = 0.22 + Math.sin(now / 1200) * 0.06;
@@ -1241,11 +1264,12 @@ function render() {
     ctx.shadowBlur = 0;
   });
 
-  // particles
+  // particles — small chunky pixels, semi-transparent so kill bursts don't
+  // overpower the scene
   game.particles.forEach(pt => {
     ctx.fillStyle = pt.color;
-    ctx.globalAlpha = clamp(pt.life / pt.maxLife, 0, 1);
-    ctx.fillRect((pt.x + 0.5) * TILE - 2, (pt.y + 0.5) * TILE - 2, 4, 4);
+    ctx.globalAlpha = clamp(pt.life / pt.maxLife, 0, 1) * 0.55;
+    ctx.fillRect((pt.x + 0.5) * TILE - 1, (pt.y + 0.5) * TILE - 1, 2, 2);
     ctx.globalAlpha = 1;
   });
 
@@ -1276,24 +1300,24 @@ function render() {
   // choosingStage takes the early-return path at the top of render().
 
   if (game.dead) {
-    ctx.fillStyle = 'rgba(10,11,17,0.78)';
+    ctx.fillStyle = 'rgba(20, 36, 26, 0.82)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     ctx.fillStyle = '#ff4060';
-    ctx.font = 'bold 56px monospace';
-    ctx.fillText('DEAD', canvas.width / 2, canvas.height / 2 - 50);
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText('DEAD', canvas.width / 2, canvas.height / 2 - 14);
 
     const seconds = Math.max(0, Math.floor((game.deathTime - game.startTime) / 1000));
-    ctx.fillStyle = '#d4d7e3';
-    ctx.font = '16px monospace';
-    ctx.fillText(`survived ${seconds}s · ${game.kills} kills`, canvas.width / 2, canvas.height / 2 + 6);
+    ctx.fillStyle = '#f4e4b8';
+    ctx.font = '6px monospace';
+    ctx.fillText(`survived ${seconds}s  ${game.kills} kills`, canvas.width / 2, canvas.height / 2 + 2);
 
-    ctx.fillStyle = '#6a6f85';
-    ctx.font = '14px monospace';
-    ctx.fillText('press R to restart', canvas.width / 2, canvas.height / 2 + 40);
+    ctx.fillStyle = '#c8b88a';
+    ctx.font = '5px monospace';
+    ctx.fillText('press R to restart', canvas.width / 2, canvas.height / 2 + 12);
   }
 
   updatePanel();

@@ -335,11 +335,13 @@ const ENEMY_KINDS = [
   { weight: 0.06, unlock: 8, radius: 0.55, speed: 0.26, hp: 3, color: '#ff20d0', shape: 'diamond' },  // heavy scout (fast + tough)
   { weight: 0.04, unlock: 9, radius: 1.05, speed: 0.03, hp: 8, color: '#200408', shape: 'hex' },      // colossus
   // Behavioral kinds — distinct combat decisions, not just stat variants.
-  { weight: 0.05, unlock: 5, radius: 0.55, speed: 0.07, hp: 2, color: '#ffaa30', shape: 'circle',   behavior: 'dash'  }, // dasher (telegraph + lunge)
-  { weight: 0.06, unlock: 6, radius: 0.50, speed: 0.10, hp: 2, color: '#ff80c0', shape: 'diamond',  behavior: 'shoot' }, // shooter (ranged hostile projectiles)
-  { weight: 0.05, unlock: 7, radius: 0.55, speed: 0.13, hp: 2, color: '#ff60a8', shape: 'circle',   behavior: 'split' }, // splitter (spawns 2 small on death)
-  { weight: 0.04, unlock: 8, radius: 0.55, speed: 0.08, hp: 2, color: '#ff9020', shape: 'hex',      behavior: 'bomb'  }, // bomber (AOE on death)
-  { weight: 0.04, unlock: 9, radius: 0.55, speed: 0.09, hp: 3, color: '#80f0c0', shape: 'hex',      behavior: 'heal'  }, // healer (heals adjacent enemies)
+  // Unlock stages pulled forward so depth shows up early: dasher at 3, then
+  // one new behavioral threat each stage through 7.
+  { weight: 0.05, unlock: 3, radius: 0.55, speed: 0.07, hp: 2, color: '#ffaa30', shape: 'circle',   behavior: 'dash'  }, // dasher (telegraph + lunge)
+  { weight: 0.06, unlock: 4, radius: 0.50, speed: 0.10, hp: 2, color: '#ff80c0', shape: 'diamond',  behavior: 'shoot' }, // shooter (ranged hostile projectiles)
+  { weight: 0.05, unlock: 5, radius: 0.55, speed: 0.13, hp: 2, color: '#ff60a8', shape: 'circle',   behavior: 'split' }, // splitter (spawns 2 small on death)
+  { weight: 0.04, unlock: 6, radius: 0.55, speed: 0.08, hp: 2, color: '#ff9020', shape: 'hex',      behavior: 'bomb'  }, // bomber (AOE on death)
+  { weight: 0.04, unlock: 7, radius: 0.55, speed: 0.09, hp: 3, color: '#80f0c0', shape: 'hex',      behavior: 'heal'  }, // healer (heals adjacent enemies)
 ];
 
 function pickEnemyKind(stage) {

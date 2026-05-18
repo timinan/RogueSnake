@@ -155,7 +155,7 @@
 
     <h3>Stats</h3>
     <div class="stat"><span>Stage</span><span id="stat-stage">1</span></div>
-    <div class="stat"><span>Wave</span><span id="stat-wave">1/1</span></div>
+    <div class="stat"><span>Enemies left</span><span id="stat-enemies-left">5</span></div>
     <div class="stat"><span>BODY (health)</span><span id="stat-body">0</span></div>
     <div class="stat"><span>Ability</span><span id="stat-ability">0</span></div>
     <div class="stat"><span>Kills</span><span id="stat-kills">0</span></div>
@@ -332,16 +332,14 @@ function spawnEnemy() {
   });
 }
 
-// Stage / wave shape. Stages 1–2 are gentle warm-up (player still learning
-// movement + firing). From stage 3 the wave count and per-wave size both
-// ramp hard.
+// Stage shape: one wave per stage so the player progresses through stages
+// quickly. Stage size grows with mild curvature — linear in stage plus a
+// small quadratic term so late stages keep ramping.
 function waveSize(stage, wave) {
-  if (stage <= 2) return 3 + stage + wave;
-  return 8 + stage + wave * stage;
+  return 3 + stage * 2 + Math.floor(stage * stage / 3);
 }
 function wavesPerStage(stage) {
-  if (stage <= 2) return stage;
-  return Math.min(5, 2 + Math.floor(stage / 2));
+  return 1;
 }
 function maxActiveEnemies(stage) {
   return Math.min(15, 6 + stage);
@@ -1296,7 +1294,7 @@ function updatePanel() {
     else abilityCount++;
   }
   document.getElementById('stat-stage').textContent = game.stage;
-  document.getElementById('stat-wave').textContent = `${game.wave}/${wavesPerStage(game.stage)}`;
+  document.getElementById('stat-enemies-left').textContent = game.waveQueue + game.enemies.length;
   document.getElementById('stat-body').textContent = bodyCount;
   document.getElementById('stat-ability').textContent = abilityCount;
   document.getElementById('stat-kills').textContent = game.kills;

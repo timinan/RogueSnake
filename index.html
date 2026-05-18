@@ -294,15 +294,18 @@ function emptyTile() {
 // kinds with unlock <= currentStage.
 const ENEMY_KINDS = [
   // weight, unlock, radius, speed, hp, color, shape
-  { weight: 0.40, unlock: 1, radius: 0.42, speed: 0.20, hp: 1, color: '#ff4848', shape: 'circle' },   // bright red small swarm
-  { weight: 0.25, unlock: 2, radius: 0.50, speed: 0.13, hp: 2, color: '#a82040', shape: 'circle' },   // deep red medium grunt
-  { weight: 0.18, unlock: 3, radius: 0.46, speed: 0.17, hp: 1, color: '#ff40a0', shape: 'diamond' },  // hot magenta diamond scout
-  { weight: 0.10, unlock: 4, radius: 0.42, speed: 0.24, hp: 1, color: '#ff7d50', shape: 'triangle' }, // coral triangle zippy
-  { weight: 0.10, unlock: 5, radius: 0.58, speed: 0.09, hp: 3, color: '#e85020', shape: 'hex' },      // burnt orange hex tank
-  { weight: 0.06, unlock: 6, radius: 0.65, speed: 0.06, hp: 4, color: '#5a1028', shape: 'circle' },   // dark crimson big bruiser
+  // Speed is strongly inverse to size: small kinds get aggressive chase speeds,
+  // big kinds lumber. Player has to actively kite small swarmers / zippies and
+  // can outrun the heavies.
+  { weight: 0.40, unlock: 1, radius: 0.42, speed: 0.28, hp: 1, color: '#ff4848', shape: 'circle' },   // small swarm (fast)
+  { weight: 0.25, unlock: 2, radius: 0.50, speed: 0.16, hp: 2, color: '#a82040', shape: 'circle' },   // medium grunt
+  { weight: 0.18, unlock: 3, radius: 0.46, speed: 0.22, hp: 1, color: '#ff40a0', shape: 'diamond' },  // diamond scout
+  { weight: 0.10, unlock: 4, radius: 0.42, speed: 0.34, hp: 1, color: '#ff7d50', shape: 'triangle' }, // triangle zippy (fastest)
+  { weight: 0.10, unlock: 5, radius: 0.58, speed: 0.10, hp: 3, color: '#e85020', shape: 'hex' },      // hex tank
+  { weight: 0.06, unlock: 6, radius: 0.65, speed: 0.07, hp: 4, color: '#5a1028', shape: 'circle' },   // big bruiser
   // Late-game heavies — bigger and tougher than the base roster.
   { weight: 0.05, unlock: 7, radius: 0.85, speed: 0.05, hp: 6, color: '#3a0820', shape: 'circle' },   // mega bruiser
-  { weight: 0.06, unlock: 8, radius: 0.55, speed: 0.20, hp: 3, color: '#ff20d0', shape: 'diamond' },  // heavy scout (fast diamond)
+  { weight: 0.06, unlock: 8, radius: 0.55, speed: 0.26, hp: 3, color: '#ff20d0', shape: 'diamond' },  // heavy scout (fast + tough)
   { weight: 0.04, unlock: 9, radius: 1.05, speed: 0.03, hp: 8, color: '#200408', shape: 'hex' },      // colossus
 ];
 
@@ -329,15 +332,15 @@ function spawnEnemy() {
 // Stage / wave shape. Stages 1–2 are warm-up; from stage 3 the wave count
 // and per-wave enemy count both ramp hard.
 function waveSize(stage, wave) {
-  if (stage <= 2) return 3 + stage + wave;
-  return 5 + stage + wave * (stage - 1);
+  if (stage <= 2) return 4 + stage * 2 + wave;
+  return 8 + stage + wave * stage;
 }
 function wavesPerStage(stage) {
   if (stage <= 2) return stage;
   return Math.min(5, 2 + Math.floor(stage / 2));
 }
 function maxActiveEnemies(stage) {
-  return Math.min(12, 5 + stage);
+  return Math.min(15, 6 + stage);
 }
 
 function startWave() {
